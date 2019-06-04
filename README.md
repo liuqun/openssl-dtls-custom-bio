@@ -33,8 +33,10 @@ start server with a list of addresses to listen
 ./server [::]:1234 # listen on any interface both ipv4/ipv6 port 1234
 ```
 
-start client with target server
+start openssl s_client or start ./client to connect to the target server
 ```
+openssl s_client -dtls1_2 -CAfile root-ca.pem -cert client-cert.pem -key client-key.pem -connect 127.0.0.1:1234
+# Or
 ./client 127.0.0.1:1234 # connect to local server on port 1234
 ```
 

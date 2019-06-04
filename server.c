@@ -46,7 +46,7 @@ void on_connect(client_t *cli)
 
         dump_addr((struct sockaddr *)&cli->data.txaddr, "user connected: ");
         cli->serve = on_message;
-        n = snprintf(buf, sizeof(buf), "hello, %s", sdump_addr((struct sockaddr *)&cli->data.txaddr));
+        n = snprintf(buf, sizeof(buf), "hello, %s\n", sdump_addr((struct sockaddr *)&cli->data.txaddr));
         SSL_write(cli->ssl, buf, n);
     }
     else if ((tmp=SSL_get_error(cli->ssl, ret))==SSL_ERROR_SSL)
@@ -86,31 +86,59 @@ void on_message(client_t *cli)
     }
     else if (n>0)
     {
-        if (n==6 && strncmp(buf, "whoami", 6)==0)
+        if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
         {
             const char *tmp = sdump_addr((struct sockaddr *)&cli->data.txaddr);
             SSL_write(cli->ssl, tmp, strlen(tmp));
+            SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
         }
-        else if (n==4 && strncmp(buf, "ping", 4)==0)
+        else if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
+        {
             SSL_write(cli->ssl, "pong", 4);
-        else if (n>=5 && strncmp(buf, "echo ", 5)==0)
+            SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
+        }
+        else if ((n>=5 && strncmp(buf, "echo ", 5)==0))
+        {
             SSL_write(cli->ssl, buf+5, n-5);
-        else if (n==5 && strncmp(buf, "stats", 5)==0)
+        }
+        else if ((n==5 && strncmp(buf, "echo\n", 5)==0))
+        {
+            SSL_write(cli->ssl, "\n", 1); // handle "echo\n" without parameters
+        }
+        else if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
         {
             n = snprintf(buf, sizeof(buf), "users:");
             HT_FOREACH(i, ht)
             {
-                n += snprintf(buf+n, sizeof(buf)-n, "\n%s", sdump_addr((struct sockaddr *)&((client_t *)i->value)->data.txaddr));
+                n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr((struct sockaddr *)&((client_t *)i->value)->data.txaddr));
             }
 
             SSL_write(cli->ssl, buf, n);
         }
-        else if (n>=3 && strncmp(buf, "bc ", 3)==0)
+        else if (n>3 && strncmp(buf, "bc ", 3)==0)
         {
             HT_FOREACH(i, ht)
             {
                 SSL_write(((client_t *)i->value)->ssl, buf+3, n-3);
             }
+        }
+        else if (n>=2 && strncmp(buf, "bc", 2)==0)
+        {
+            const char CmdHint[] = "Usage: bc <some text>\n";
+            SSL_write(cli->ssl, CmdHint, sizeof(CmdHint)-1);
+        }
+        else
+        {
+            const char Hints[] =
+                    "Unknown command! Currently my server supports the following commands:\n"
+                    "  1. ping returns pong\n"
+                    "  2. echo <some text> returns <some text>\n"
+                    "  3. whoami returns client's address and port seen by server\n"
+                    "  4. stats returns a list of server currently serving clients\n"
+                    "  5. bc <some text> broadcast <some text> to all clients\n"
+                    "You may try these commands youself and see how they work.\n"
+		    "Good luck!\n";
+            SSL_write(cli->ssl, Hints, sizeof(Hints)-1);
         }
     }
 }
