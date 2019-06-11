@@ -88,6 +88,19 @@ int BIO_s_custom_gets(BIO *b, char *data, int size);
 
 int BIO_s_custom_puts(BIO *b, const char *data);
 
+#if defined(OPENSSL_NO_SCTP)
+/* I would like the following definitions to be available even when SCTP feature was disabled in OpenSSL */
+#define BIO_CTRL_DGRAM_SCTP_ADD_AUTH_KEY 51
+#define BIO_CTRL_DGRAM_SCTP_NEXT_AUTH_KEY 52
+#define BIO_CTRL_DGRAM_SCTP_AUTH_CCS_RCVD 53
+#define BIO_CTRL_DGRAM_SCTP_GET_SNDINFO 60
+#define BIO_CTRL_DGRAM_SCTP_SET_SNDINFO 61
+#define BIO_CTRL_DGRAM_SCTP_GET_RCVINFO 62
+#define BIO_CTRL_DGRAM_SCTP_SET_RCVINFO 63
+#define BIO_CTRL_DGRAM_SCTP_GET_PRINFO 64
+#define BIO_CTRL_DGRAM_SCTP_SET_PRINFO 65
+#define BIO_CTRL_DGRAM_SCTP_SAVE_SHUTDOWN 70
+#endif /* end SCTP stuff */
 
 long BIO_s_custom_ctrl(BIO *b, int cmd, long larg, void *pargs)
 {
@@ -122,6 +135,22 @@ long BIO_s_custom_ctrl(BIO *b, int cmd, long larg, void *pargs)
         case BIO_CTRL_PUSH: // 6
         case BIO_CTRL_POP: // 7
         case BIO_CTRL_DGRAM_SET_NEXT_TIMEOUT: // 45
+            ret = 0;
+            break;
+        /* We need to handle/ignore the following SCTP control commands: */
+        case BIO_CTRL_DGRAM_SCTP_ADD_AUTH_KEY:
+        case BIO_CTRL_DGRAM_SCTP_NEXT_AUTH_KEY:
+        case BIO_CTRL_DGRAM_SCTP_AUTH_CCS_RCVD:
+        case BIO_CTRL_DGRAM_SCTP_GET_SNDINFO:
+        case BIO_CTRL_DGRAM_SCTP_SET_SNDINFO:
+        case BIO_CTRL_DGRAM_SCTP_GET_RCVINFO:
+        case BIO_CTRL_DGRAM_SCTP_SET_RCVINFO:
+        case BIO_CTRL_DGRAM_SCTP_GET_PRINFO:
+        case BIO_CTRL_DGRAM_SCTP_SET_PRINFO:
+        case BIO_CTRL_DGRAM_SCTP_SAVE_SHUTDOWN:
+            /* Tested against OpenSSL 1.1.1 shipped by RedHat RHEL-8.0.
+             * See bug report: https://github.com/stepheny/openssl-dtls-custom-bio/issues/3
+             */
             ret = 0;
             break;
         default:
