@@ -18,8 +18,6 @@ enum
     TIME_OUT = 8000 // ms
 };
 
-hashtable_t *ht;
-
 typedef struct client_s client_t;
 struct client_s
 {
@@ -28,118 +26,6 @@ struct client_s
 };
 
 char cookie_str[] = "BISCUIT!";
-
-void on_connect(client_t *cli);
-void on_message(client_t *cli);
-
-void on_connect(client_t *cli)
-{
-    int ret = SSL_accept(cli->ssl);
-    fprintf(stderr, "SSL_accept -> %d\n", ret);
-    int tmp;
-
-    if (ret==1)
-    {
-        char buf[64];
-        int n;
-
-        dump_addr((struct sockaddr *)&cli->data.txaddr, "user connected: ");
-        n = snprintf(buf, sizeof(buf), "hello, %s\n", sdump_addr((struct sockaddr *)&cli->data.txaddr));
-        SSL_write(cli->ssl, buf, n);
-    }
-    else if ((tmp=SSL_get_error(cli->ssl, ret))==SSL_ERROR_SSL)
-    {
-        fprintf(stderr, "!!!! SSL_get_error -> %d\n", tmp);
-
-        dump_addr((struct sockaddr *)&cli->data.txaddr, "ssl error: ");
-        ERR_print_errors_fp(stderr);
-
-        assert(ht_delete(ht, &cli->data.txaddr_buf));
-        SSL_free(cli->ssl);
-        free(cli);
-    }
-    else
-    {
-        fprintf(stderr, "!!!! SSL_get_error -> %d\n", tmp);
-    }
-}
-
-void on_message(client_t *cli)
-{
-    char buf[2000];
-    int n;
-
-    n = SSL_read(cli->ssl, buf, sizeof(buf));
-
-    fprintf(stderr, "SSL_read -> %d\n", n);
-    fflush(stderr);
-
-    if (n==0)
-    {
-        SSL_shutdown(cli->ssl);
-        dump_addr((struct sockaddr *)&cli->data.txaddr, "|| ");
-        assert(ht_delete(ht, &cli->data.txaddr_buf));
-        SSL_free(cli->ssl);
-        free(cli);
-    }
-    else if (n>0)
-    {
-        if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
-        {
-            const char *tmp = sdump_addr((struct sockaddr *)&cli->data.txaddr);
-            SSL_write(cli->ssl, tmp, strlen(tmp));
-            SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
-        }
-        else if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
-        {
-            SSL_write(cli->ssl, "pong", 4);
-            SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
-        }
-        else if ((n>=5 && strncmp(buf, "echo ", 5)==0))
-        {
-            SSL_write(cli->ssl, buf+5, n-5);
-        }
-        else if ((n==5 && strncmp(buf, "echo\n", 5)==0))
-        {
-            SSL_write(cli->ssl, "\n", 1); // handle "echo\n" without parameters
-        }
-        else if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
-        {
-            n = snprintf(buf, sizeof(buf), "users:");
-            HT_FOREACH(i, ht)
-            {
-                n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr((struct sockaddr *)&((client_t *)i->value)->data.txaddr));
-            }
-
-            SSL_write(cli->ssl, buf, n);
-        }
-        else if (n>3 && strncmp(buf, "bc ", 3)==0)
-        {
-            HT_FOREACH(i, ht)
-            {
-                SSL_write(((client_t *)i->value)->ssl, buf+3, n-3);
-            }
-        }
-        else if (n>=2 && strncmp(buf, "bc", 2)==0)
-        {
-            const char CmdHint[] = "Usage: bc <some text>\n";
-            SSL_write(cli->ssl, CmdHint, sizeof(CmdHint)-1);
-        }
-        else
-        {
-            const char Hints[] =
-                    "Unknown command! Currently my server supports the following commands:\n"
-                    "  1. ping returns pong\n"
-                    "  2. echo <some text> returns <some text>\n"
-                    "  3. whoami returns client's address and port seen by server\n"
-                    "  4. stats returns a list of server currently serving clients\n"
-                    "  5. bc <some text> broadcast <some text> to all clients\n"
-                    "You may try these commands youself and see how they work.\n"
-		    "Good luck!\n";
-            SSL_write(cli->ssl, Hints, sizeof(Hints)-1);
-        }
-    }
-}
 
 int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len)
 {
@@ -280,7 +166,7 @@ int main(int argc, char **argv)
 
     signal(SIGINT, signal_handler);
 
-    ht = ht256_new();
+    hashtable_t *ht = ht256_new();
 
     client_t *client = (client_t *)malloc(sizeof(client_t));
     client->ssl = SSL_new(ctx);
@@ -337,7 +223,89 @@ int main(int argc, char **argv)
             if (cli)
             {
                 deque_append(&cli->data.rxqueue, packet);
-                on_message(client);
+
+                int stateflag = SSL_get_shutdown(cli->ssl);
+                if (stateflag & SSL_RECEIVED_SHUTDOWN)
+                {
+                    if (!(stateflag & SSL_SENT_SHUTDOWN))
+                    {
+                        SSL_shutdown(cli->ssl);
+                    }
+                    SSL_free(cli->ssl);
+                    ht_delete(ht, &cli->data.txaddr_buf);
+                    free(cli);
+                    continue;
+                }
+
+                // Read and write DTLS application data:
+                char buf[packet->len];
+                int n = SSL_read(cli->ssl, buf, sizeof(buf));
+                if (n==0)
+                {
+                    SSL_shutdown(cli->ssl);
+                }
+                else if (n>0)
+                {
+                    const char Hints[] = "Currently my server supports the following commands:\n"
+                        "  1. ping returns pong\n"
+                        "  2. echo <some text> returns <some text>\n"
+                        "  3. whoami returns client's address and port seen by server\n"
+                        "  4. stats returns a list of server currently serving clients\n"
+                        "  5. bc <some text> broadcast <some text> to all clients\n"
+                        "You may try these commands youself and see how they work.\n"
+                        "Good luck!\n";
+                    const int HintsLen = sizeof(Hints)-1;
+
+                    if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
+                    {
+                        const char *tmp = sdump_addr((struct sockaddr *)&cli->data.txaddr);
+                        SSL_write(cli->ssl, tmp, strlen(tmp));
+                        SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
+                    }
+                    else if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
+                    {
+                        SSL_write(cli->ssl, "pong", 4);
+                        SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
+                    }
+                    else if ((n>=5 && strncmp(buf, "echo ", 5)==0))
+                    {
+                        SSL_write(cli->ssl, buf+5, n-5);
+                    }
+                    else if ((n==5 && strncmp(buf, "echo\n", 5)==0))
+                    {
+                        SSL_write(cli->ssl, "\n", 1); // handle "echo\n" without parameters
+                    }
+                    else if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
+                    {
+                        n = snprintf(buf, sizeof(buf), "users:");
+                        HT_FOREACH(i, ht)
+                        {
+                            n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr((struct sockaddr *)&((client_t *)i->value)->data.txaddr));
+                        }
+
+                        SSL_write(cli->ssl, buf, n);
+                    }
+                    else if (n>3 && strncmp(buf, "bc ", 3)==0)
+                    {
+                        HT_FOREACH(i, ht)
+                        {
+                            SSL_write(((client_t *)i->value)->ssl, buf+3, n-3);
+                        }
+                    }
+                    else if (n>=2 && strncmp(buf, "bc", 2)==0)
+                    {
+                        const char CmdHint[] = "Usage: bc <some text>\n";
+                        const int CmdHintLen = sizeof(CmdHint)-1;
+                        SSL_write(cli->ssl, CmdHint, CmdHintLen);
+                    }
+                    else
+                    {
+                        const char UnknownCmdHint[] = "Sorry, I don't understand...\n";
+                        int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
+                        SSL_write(cli->ssl, UnknownCmdHint, UnknownCmdHintLen);
+                        SSL_write(cli->ssl, Hints, HintsLen);
+                    }
+                }
             }
             else
             {
@@ -352,8 +320,34 @@ int main(int argc, char **argv)
                     buffer_t *key = &client->data.txaddr_buf;
                     ht_insert(ht, key, client);
                     dump_addr((struct sockaddr *)&client->data.txaddr, "++ ");
-                    on_connect(client);
 
+                    int e;
+                    ret = SSL_accept(client->ssl);
+                    fprintf(stderr, "SSL_accept -> %d\n", ret);
+
+                    if (ret==1)
+                    {
+                        char GreetingMsg[]= "Greetings!\n";
+                        int msglen;
+                        dump_addr((struct sockaddr *)&client->data.txaddr, "user connected: ");
+                        msglen = sizeof(GreetingMsg) - 1;
+                        SSL_write(client->ssl, GreetingMsg, msglen);
+                    }
+                    else if ((e=SSL_get_error(client->ssl, ret))==SSL_ERROR_SSL)
+                    {
+                        fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
+
+                        dump_addr((struct sockaddr *)&client->data.txaddr, "ssl error: ");
+                        ERR_print_errors_fp(stderr);
+
+                        SSL_free(client->ssl);
+                        ht_delete(ht, &client->data.txaddr_buf);
+                        free(client);
+                    }
+                    else
+                    {
+                        fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
+                    }
 
                     client = (client_t *)malloc(sizeof(client_t));
                     client->ssl = SSL_new(ctx);
