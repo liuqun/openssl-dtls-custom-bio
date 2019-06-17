@@ -25,7 +25,6 @@ struct client_s
 {
     custom_bio_data_t data;
     SSL *ssl;
-    void (*serve)(client_t *cli);
 };
 
 char cookie_str[] = "BISCUIT!";
@@ -45,7 +44,6 @@ void on_connect(client_t *cli)
         int n;
 
         dump_addr((struct sockaddr *)&cli->data.txaddr, "user connected: ");
-        cli->serve = on_message;
         n = snprintf(buf, sizeof(buf), "hello, %s\n", sdump_addr((struct sockaddr *)&cli->data.txaddr));
         SSL_write(cli->ssl, buf, n);
     }
@@ -291,7 +289,6 @@ int main(int argc, char **argv)
     client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
     client->data.peekmode = 0;
-    client->serve = on_connect;
 
                 BIO *bio = BIO_new(BIO_s_custom());
                 BIO_set_data(bio, (void *)&client->data);
@@ -340,7 +337,7 @@ int main(int argc, char **argv)
             if (cli)
             {
                 deque_append(&cli->data.rxqueue, packet);
-                cli->serve(cli);
+                on_message(client);
             }
             else
             {
@@ -355,7 +352,7 @@ int main(int argc, char **argv)
                     buffer_t *key = &client->data.txaddr_buf;
                     ht_insert(ht, key, client);
                     dump_addr((struct sockaddr *)&client->data.txaddr, "++ ");
-                    client->serve(client);
+                    on_connect(client);
 
 
                     client = (client_t *)malloc(sizeof(client_t));
@@ -365,7 +362,6 @@ int main(int argc, char **argv)
                     client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
                     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
                     client->data.peekmode = 0;
-                    client->serve = on_connect;
 
                     BIO *bio = BIO_new(BIO_s_custom());
                     BIO_set_data(bio, (void *)&client->data);
