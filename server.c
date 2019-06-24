@@ -118,15 +118,15 @@ int main(int argc, char **argv)
 
         buffer_t *bp;
         char *c;
-        int p;
+        int port;
 
         if (argv[i][0]=='[')
         {
             c = strchr(argv[i], ']');
             if (!c)
                 continue;
-            p = atoi(c+2);
-            if (p<1||p>65535)
+            port = atoi(c+2);
+            if (port<1||port>65535)
                 continue;
             *c = '\0';
 
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
                 buffer_free(bp);
                 continue;
             }
-            ((struct sockaddr_in6 *)bp->buf)->sin6_port = htons(p);
+            ((struct sockaddr_in6 *)bp->buf)->sin6_port = htons(port);
             deque_append(addrlist, bp);
         }
         else
@@ -149,8 +149,8 @@ int main(int argc, char **argv)
             c = strchr(argv[i], ':');
             if (!c)
                 continue;
-            p = atoi(c+1);
-            if (p<1||p>65535)
+            port = atoi(c+1);
+            if (port<1||port>65535)
                 continue;
             *c = '\0';
 
@@ -165,7 +165,7 @@ int main(int argc, char **argv)
                 buffer_free(bp);
                 continue;
             }
-            ((struct sockaddr_in *)bp->buf)->sin_port = htons(p);
+            ((struct sockaddr_in *)bp->buf)->sin_port = htons(port);
             deque_append(addrlist, bp);
         }
 
