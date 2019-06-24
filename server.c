@@ -49,6 +49,8 @@ void signal_handler(int sig)
     fflush(stderr);
 }
 
+const int UNDEFINED_TXFD = ~0x00000000L;
+
 int main(int argc, char **argv)
 {
     int ret;
@@ -175,6 +177,7 @@ int main(int argc, char **argv)
     client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
     client->data.peekmode = 0;
+    client->data.txfd = UNDEFINED_TXFD;
 
                 BIO *bio = BIO_new(BIO_s_custom());
                 BIO_set_data(bio, (void *)&client->data);
@@ -356,6 +359,7 @@ int main(int argc, char **argv)
                     client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
                     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
                     client->data.peekmode = 0;
+                    client->data.txfd = UNDEFINED_TXFD;
 
                     BIO *bio = BIO_new(BIO_s_custom());
                     BIO_set_data(bio, (void *)&client->data);
