@@ -19,12 +19,55 @@ enum
 };
 
 typedef struct client_s client_t;
+
+typedef void (*custom_callback_fn_t)(client_t *client, void *extra_arg);
+
 struct client_s
 {
     custom_bio_data_t data;
     SSL *ssl;
+
+    int is_handshake_accepted;
+    struct {
+        custom_callback_fn_t on_handshake_accepted_cb;
+        void *on_handshake_accepted_extra_arg;
+    };
 };
 
+void server_send_greetings_to_client(client_t *client, void *extra_greeting_arg)
+{
+    const char *DefaultGreetingMsg = "(Server greeting message is empty by default...)\n";
+    const char *msg = (const char *)extra_greeting_arg;
+    size_t n=0;
+
+    dump_addr(&client->data.txaddr, "user connected: ");
+    if (!msg || (n=strlen(msg)) <= 0)
+    {
+        n = strlen(DefaultGreetingMsg);
+        msg = DefaultGreetingMsg;
+    }
+    SSL_write(client->ssl, msg, n);
+}
+
+int server_accept_handshake_from_client(struct client_s *client)
+{
+    if (client->is_handshake_accepted)
+    {
+        return 1;
+    }
+
+    if (SSL_accept(client->ssl) != 1)
+    {
+        client->is_handshake_accepted = 0;
+        return 0;
+    }
+    client->is_handshake_accepted = 1;
+    if (client->on_handshake_accepted_cb)
+    {
+        client->on_handshake_accepted_cb(client, client->on_handshake_accepted_extra_arg);
+    }
+    return 1;
+}
 char cookie_str[] = "BISCUIT!";
 
 int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len)
@@ -180,6 +223,9 @@ int main(int argc, char **argv)
     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
     client->data.peekmode = 0;
     client->data.txfd = UNDEFINED_TXFD;
+    client->is_handshake_accepted = 0;
+    client->on_handshake_accepted_cb = server_send_greetings_to_client;
+    client->on_handshake_accepted_extra_arg = "";
 
                 BIO *bio = BIO_new(BIO_s_custom());
                 BIO_set_data(bio, (void *)&client->data);
@@ -240,6 +286,23 @@ int main(int argc, char **argv)
                     ht_delete(ht, &cli->data.txaddr_buf);
                     free(cli);
                     continue;
+                }
+
+                if (!cli->is_handshake_accepted)
+                {
+                    if (!server_accept_handshake_from_client(cli))
+                    {
+                        int e;
+                        e = SSL_get_error(client->ssl, ret);
+                        if (SSL_ERROR_SSL == e)
+                        {
+                            fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
+                            ERR_print_errors_fp(stderr);
+                            SSL_free(cli->ssl);
+                            ht_delete(ht, &cli->data.txaddr_buf);
+                            free(cli);
+                        }
+                    }
                 }
 
                 // Read and write DTLS application data:
@@ -324,34 +387,18 @@ int main(int argc, char **argv)
                 {
                     buffer_t *key = &client->data.txaddr_buf;
                     ht_insert(ht, key, client);
-                    dump_addr((struct sockaddr *)&client->data.txaddr, "++ ");
 
-                    int e;
-                    ret = SSL_accept(client->ssl);
-                    fprintf(stderr, "SSL_accept -> %d\n", ret);
-
-                    if (ret==1)
-                    {
-                        char GreetingMsg[]= "Greetings!\n";
-                        int msglen;
-                        dump_addr((struct sockaddr *)&client->data.txaddr, "user connected: ");
-                        msglen = sizeof(GreetingMsg) - 1;
-                        SSL_write(client->ssl, GreetingMsg, msglen);
-                    }
-                    else if ((e=SSL_get_error(client->ssl, ret))==SSL_ERROR_SSL)
-                    {
-                        fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
-
-                        dump_addr((struct sockaddr *)&client->data.txaddr, "ssl error: ");
-                        ERR_print_errors_fp(stderr);
-
-                        SSL_free(client->ssl);
-                        ht_delete(ht, &client->data.txaddr_buf);
-                        free(client);
-                    }
-                    else
-                    {
-                        fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
+                    if (!server_accept_handshake_from_client(client)) {
+                        int e;
+                        e = SSL_get_error(client->ssl, ret);
+                        if (SSL_ERROR_SSL == e)
+                        {
+                            fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
+                            ERR_print_errors_fp(stderr);
+                            SSL_free(client->ssl);
+                            ht_delete(ht, &client->data.txaddr_buf);
+                            free(client);
+                        }
                     }
 
                     client = (client_t *)malloc(sizeof(client_t));
@@ -362,6 +409,9 @@ int main(int argc, char **argv)
                     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
                     client->data.peekmode = 0;
                     client->data.txfd = UNDEFINED_TXFD;
+                    client->is_handshake_accepted = 0;
+                    client->on_handshake_accepted_cb = server_send_greetings_to_client;
+                    client->on_handshake_accepted_extra_arg = "";
 
                     BIO *bio = BIO_new(BIO_s_custom());
                     BIO_set_data(bio, (void *)&client->data);
