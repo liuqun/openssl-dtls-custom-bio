@@ -6,6 +6,8 @@ typedef struct custom_bio_data_st {
     union {
         struct sockaddr_storage txaddr_storage;
         struct sockaddr         txaddr;
+        struct sockaddr_in      txaddr_v4;
+        struct sockaddr_in6     txaddr_v6;
     };
     deque_t rxqueue;
     int txfd;

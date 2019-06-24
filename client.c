@@ -70,7 +70,7 @@ int main(int argc, char **argv)
 
     custom_bio_data_t cbio_data;
     char *c;
-    int p;
+    int port;
 
     if (argv[1][0]=='[')
     {
@@ -83,8 +83,8 @@ int main(int argc, char **argv)
 
             exit(1);
         }
-        p = atoi(c+2);
-        if (p<1||p>65535)
+        port = atoi(c+2);
+        if (port<1||port>65535)
         {
             fputs("invalid port: ", stderr);
             fputs(argv[1], stderr);
@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 
         cbio_data.txaddr.sa_family = AF_INET6;
 
-        ret = inet_pton(AF_INET6, argv[1]+1, &((struct sockaddr_in6 *)&cbio_data.txaddr)->sin6_addr);
+        ret = inet_pton(AF_INET6, argv[1]+1, &cbio_data.txaddr_v6.sin6_addr);
         if (!ret)
         {
             fputs("invalid ipv6 address: ", stderr);
@@ -105,7 +105,7 @@ int main(int argc, char **argv)
 
             exit(1);
         }
-        ((struct sockaddr_in6 *)&cbio_data.txaddr)->sin6_port = htons(p);
+        cbio_data.txaddr_v6.sin6_port = htons(port);
         cbio_data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
         cbio_data.txaddr_buf.len = sizeof(struct sockaddr_in6);
     }
@@ -120,8 +120,8 @@ int main(int argc, char **argv)
 
             exit(1);
         }
-        p = atoi(c+1);
-        if (p<1||p>65535)
+        port = atoi(c+1);
+        if (port<1||port>65535)
         {
             fputs("invalid port: ", stderr);
             fputs(argv[1], stderr);
@@ -133,7 +133,7 @@ int main(int argc, char **argv)
 
         cbio_data.txaddr.sa_family = AF_INET;
 
-        ret = inet_pton(AF_INET, argv[1], &((struct sockaddr_in *)&cbio_data.txaddr)->sin_addr);
+        ret = inet_pton(AF_INET, argv[1], &cbio_data.txaddr_v4.sin_addr);
         if (!ret)
         {
             fputs("invalid ipv4 address: ", stderr);
@@ -142,7 +142,7 @@ int main(int argc, char **argv)
 
             exit(1);
         }
-        ((struct sockaddr_in *)&cbio_data.txaddr)->sin_port = htons(p);
+        cbio_data.txaddr_v4.sin_port = htons(port);
         cbio_data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
         cbio_data.txaddr_buf.len = sizeof(struct sockaddr_in);
     }
