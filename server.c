@@ -61,7 +61,7 @@ int server_accept_handshake_from_client(client_t *cli)
         return 0;
     }
 
-    dump_addr((struct sockaddr *)&cli->data.txaddr, "user connected: ");
+    dump_addr(&cli->data.txaddr, "user connected: ");
     cli->is_handshake_accepted = 1;
     if (cli->on_handshake_accepted_cb)
     {
@@ -264,9 +264,9 @@ int main(int argc, char **argv)
             new_line = 0;
         }
 
-        while ((packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, (struct sockaddr *)&client->data.txaddr, (socklen_t *)&client->data.txaddr_buf.len))>0)
+        while ((packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, &client->data.txaddr, (socklen_t *)&client->data.txaddr_buf.len))>0)
         {
-            dump_addr((struct sockaddr *)&client->data.txaddr, "<< ");
+            dump_addr(&client->data.txaddr, "<< ");
 
             client_t *cli = (client_t *)ht_search(ht, &client->data.txaddr_buf);
             if (cli)
@@ -324,7 +324,7 @@ int main(int argc, char **argv)
 
                     if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
                     {
-                        const char *tmp = sdump_addr((struct sockaddr *)&cli->data.txaddr);
+                        const char *tmp = sdump_addr(&cli->data.txaddr);
                         SSL_write(cli->ssl, tmp, strlen(tmp));
                         SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
                     }
@@ -346,7 +346,7 @@ int main(int argc, char **argv)
                         n = snprintf(buf, sizeof(buf), "users:");
                         HT_FOREACH(i, ht)
                         {
-                            n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr((struct sockaddr *)&((client_t *)i->value)->data.txaddr));
+                            n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr(&((client_t *)i->value)->data.txaddr));
                         }
 
                         SSL_write(cli->ssl, buf, n);
