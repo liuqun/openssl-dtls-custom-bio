@@ -3,8 +3,10 @@
 
 typedef struct custom_bio_data_st {
     buffer_t txaddr_buf;
-//     struct sockaddr txaddr;
-    struct sockaddr_storage txaddr;
+    union {
+        struct sockaddr_storage txaddr_storage;
+        struct sockaddr         txaddr;
+    };
     deque_t rxqueue;
     int txfd;
     int peekmode;
