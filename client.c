@@ -94,7 +94,7 @@ int main(int argc, char **argv)
         }
         *c = '\0';
 
-        cbio_data.txaddr.ss_family = AF_INET6;
+        cbio_data.txaddr.sa_family = AF_INET6;
 
         ret = inet_pton(AF_INET6, argv[1]+1, &((struct sockaddr_in6 *)&cbio_data.txaddr)->sin6_addr);
         if (!ret)
@@ -106,7 +106,7 @@ int main(int argc, char **argv)
             exit(1);
         }
         ((struct sockaddr_in6 *)&cbio_data.txaddr)->sin6_port = htons(p);
-        cbio_data.txaddr_buf.cap = sizeof(cbio_data.txaddr);
+        cbio_data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
         cbio_data.txaddr_buf.len = sizeof(struct sockaddr_in6);
     }
     else
@@ -131,7 +131,7 @@ int main(int argc, char **argv)
         }
         *c = '\0';
 
-        cbio_data.txaddr.ss_family = AF_INET;
+        cbio_data.txaddr.sa_family = AF_INET;
 
         ret = inet_pton(AF_INET, argv[1], &((struct sockaddr_in *)&cbio_data.txaddr)->sin_addr);
         if (!ret)
@@ -143,13 +143,13 @@ int main(int argc, char **argv)
             exit(1);
         }
         ((struct sockaddr_in *)&cbio_data.txaddr)->sin_port = htons(p);
-        cbio_data.txaddr_buf.cap = sizeof(cbio_data.txaddr);
+        cbio_data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
         cbio_data.txaddr_buf.len = sizeof(struct sockaddr_in);
     }
 
-    int sockfd = socket(cbio_data.txaddr.ss_family, SOCK_DGRAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0);
+    int sockfd = socket(cbio_data.txaddr.sa_family, SOCK_DGRAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0);
 
-    if (connect(sockfd, (struct sockaddr *)&cbio_data.txaddr, cbio_data.txaddr_buf.len))
+    if (connect(sockfd, &cbio_data.txaddr, cbio_data.txaddr_buf.len))
     {
         fputs("failed to connect\n", stderr);
 
@@ -209,7 +209,7 @@ int main(int argc, char **argv)
     }
     else if (SSL_get_error(ssl, ret)==SSL_ERROR_SSL)
     {
-        dump_addr((struct sockaddr *)&cbio_data.txaddr, "ssl error: ");
+        dump_addr(&cbio_data.txaddr, "ssl error: ");
         ERR_print_errors_fp(stderr);
     }
 
@@ -266,7 +266,7 @@ int main(int argc, char **argv)
                     }
                     else if (SSL_get_error(ssl, ret)==SSL_ERROR_SSL)
                     {
-                        dump_addr((struct sockaddr *)&cbio_data.txaddr, "ssl error: ");
+                        dump_addr(&cbio_data.txaddr, "ssl error: ");
                         ERR_print_errors_fp(stderr);
 
                         run = 0;
