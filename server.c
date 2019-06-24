@@ -53,6 +53,7 @@ const int UNDEFINED_TXFD = ~0x00000000L;
 
 int main(int argc, char **argv)
 {
+    int bind_error;
     int ret;
 
     if (argc<=1)
@@ -158,7 +159,8 @@ int main(int argc, char **argv)
 
         fprintf(stderr, "new socket fd: %d\n", epe.data.fd);
         dump_addr((struct sockaddr *)bp->buf, "try bind: ");
-        assert(bind(epe.data.fd, (struct sockaddr *)bp->buf, (socklen_t)bp->len) == 0);
+        bind_error = bind(epe.data.fd, (struct sockaddr *)bp->buf, (socklen_t)bp->len);
+        assert(!bind_error);
 
         epe.events = EPOLLIN|EPOLLET;
         epoll_ctl(epfd, EPOLL_CTL_ADD, epe.data.fd, &epe);
