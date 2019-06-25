@@ -13,6 +13,17 @@
 #include "util.h"
 #include "cbio.h"
 
+char SERVER_HINTS[] =
+    "My server supports the following commands:\n"
+    "  1. ping returns pong\n"
+    "  2. echo <some text> returns <some text>\n"
+    "  3. whoami returns client's address and port seen by server\n"
+    "  4. stats returns a list of server currently serving clients\n"
+    "  5. bc <some text> broadcast <some text> to all clients\n"
+    "You may try these commands youself and see how they work.\n"
+    "Good luck!\n";
+const int SERVER_HINTS_LEN = sizeof(SERVER_HINTS) - 1;
+
 enum
 {
     TIME_OUT = 8000 // ms
@@ -73,7 +84,7 @@ server_udp_channel_t * server_udp_channel_new_from_ctx(SSL_CTX *ctx)
 
     channel->is_handshake_accepted = 0;
     channel->on_handshake_accepted_cb = server_send_greetings_to_client;
-    channel->on_handshake_accepted_extra_arg = "";
+    channel->on_handshake_accepted_extra_arg = SERVER_HINTS;
 
     return channel;
 }
@@ -106,6 +117,25 @@ void server_append_incoming_packet(server_udp_channel_t *chnl, buffer_t *packet)
     deque_append(&(chnl->data.rxqueue), packet);
 }
 
+int server_get(server_udp_channel_t *chnl, void *out_buf, size_t out_buf_max_bytes)
+{
+    size_t decrypted=0;
+    int max = (int) out_buf_max_bytes;
+    int ret;
+
+    if ((ret = SSL_read(chnl->ssl, out_buf, out_buf_max_bytes)) < 0)
+    {
+        int e = SSL_get_error(chnl->ssl, ret);
+        if (SSL_ERROR_SSL == e)
+        {
+            fprintf(stderr, "SSL_ERROR_SSL!\n");
+            ERR_print_errors_fp(stderr);
+        }
+        return 0;
+    }
+    return ret;
+}
+
 void server_try_doing_handshake(server_udp_channel_t *chnl)
 {
     if (chnl->is_handshake_accepted)
@@ -128,12 +158,9 @@ void server_try_doing_handshake(server_udp_channel_t *chnl)
     return;
 }
 
-void server_send_application_data(server_udp_channel_t *chnl, const void *datablock, size_t n)
+void server_put(server_udp_channel_t *chnl, const void *datablock, size_t blocksize)
 {
-    int e;
-    size_t written = 0;
-
-    SSL_write_ex(chnl->ssl, datablock, n, &written);
+    SSL_write(chnl->ssl, datablock, (int)blocksize);
 }
 
 char cookie_str[] = "BISCUIT!";
@@ -326,133 +353,18 @@ int main(int argc, char **argv)
             peer_addr_buf = &(channel->data.txaddr_buf);
             peer_addr_buf->len = (int) peer_addr_len;
             server_udp_channel_t *chnl = (server_udp_channel_t *) ht_search(ht, peer_addr_buf);
-            if (chnl)
-            {
-                server_append_incoming_packet(chnl, packet);
-
-                int stateflag = SSL_get_shutdown(chnl->ssl);
-                if (stateflag & SSL_RECEIVED_SHUTDOWN)
-                {
-                    if (!(stateflag & SSL_SENT_SHUTDOWN))
-                    {
-                        SSL_shutdown(chnl->ssl);
-                    }
-                    ht_delete(ht, peer_addr_buf);
-                    server_udp_channel_free(&chnl);
-                    continue;
-                }
-
-                if (!server_hanshake_is_done(chnl))
-                {
-                    server_try_doing_handshake(chnl);
-                    if (!server_hanshake_is_done(chnl))
-                    {
-                        int e;
-                        e = SSL_get_error(chnl->ssl, ret);
-                        if (SSL_ERROR_SSL == e)
-                        {
-                            fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
-                            ERR_print_errors_fp(stderr);
-                            ht_delete(ht, peer_addr_buf);
-                            server_udp_channel_free(&chnl);
-                        }
-                    }
-                }
-
-                // Read and write DTLS application data:
-                char buf[packet->len];
-                int n = SSL_read(chnl->ssl, buf, sizeof(buf));
-                if (n==0)
-                {
-                    SSL_shutdown(chnl->ssl);
-                }
-                else if (n>0)
-                {
-                    const char Hints[] = "Currently my server supports the following commands:\n"
-                        "  1. ping returns pong\n"
-                        "  2. echo <some text> returns <some text>\n"
-                        "  3. whoami returns client's address and port seen by server\n"
-                        "  4. stats returns a list of server currently serving clients\n"
-                        "  5. bc <some text> broadcast <some text> to all clients\n"
-                        "You may try these commands youself and see how they work.\n"
-                        "Good luck!\n";
-                    const int HintsLen = sizeof(Hints)-1;
-
-                    if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
-                    {
-                        const char *tmp = sdump_addr(&chnl->data.txaddr);
-                        server_send_application_data(chnl, tmp, strlen(tmp));
-                        server_send_application_data(chnl, "\n", 1); // "\n" for openssl s_client
-                    }
-                    else if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
-                    {
-                        server_send_application_data(chnl, "pong", 4);
-                        server_send_application_data(chnl, "\n", 1); // "\n" for openssl s_client
-                    }
-                    else if ((n>=5 && strncmp(buf, "echo ", 5)==0))
-                    {
-                        server_send_application_data(chnl, buf+5, n-5);
-                    }
-                    else if ((n==5 && strncmp(buf, "echo\n", 5)==0))
-                    {
-                        server_send_application_data(chnl, "\n", 1); // handle "echo\n" without parameters
-                    }
-                    else if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
-                    {
-                        char replymsg[1400];
-                        int cnt; // bytes counter
-                        int delta;
-                        cnt = 0;
-                        delta = snprintf(replymsg, sizeof(replymsg), "users:\n");
-                        cnt += delta;
-                        HT_FOREACH(i, ht)
-                        {
-                            delta = snprintf(replymsg+cnt, sizeof(replymsg)-cnt, "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
-                            if (cnt+delta >= sizeof(replymsg)-1)
-                            {
-                                server_send_application_data(chnl, replymsg, cnt);
-                                cnt = 0;
-                                delta = snprintf(replymsg, sizeof(replymsg), "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
-                            }
-                            cnt += delta;
-                        }
-                        server_send_application_data(chnl, replymsg, cnt);
-                    }
-                    else if (n>3 && strncmp(buf, "bc ", 3)==0)
-                    {
-                        HT_FOREACH(i, ht)
-                        {
-                            server_send_application_data((server_udp_channel_t *)i->value, buf+3, n-3);
-                        }
-                    }
-                    else if (n>=2 && strncmp(buf, "bc", 2)==0)
-                    {
-                        const char CmdHint[] = "Usage: bc <some text>\n";
-                        const int CmdHintLen = sizeof(CmdHint)-1;
-                        server_send_application_data(chnl, CmdHint, CmdHintLen);
-                    }
-                    else
-                    {
-                        const char UnknownCmdHint[] = "Sorry, I don't understand...\n";
-                        int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
-                        server_send_application_data(chnl, UnknownCmdHint, UnknownCmdHintLen);
-                        server_send_application_data(chnl, Hints, HintsLen);
-                    }
-                }
-            }
-            else
+            if (!chnl)
             {
                 channel->data.txfd = epe.data.fd;
                 server_append_incoming_packet(channel, packet);
+                packet = buffer_new(2000);
                 ret = DTLSv1_listen(channel->ssl, NULL);
-                fprintf(stderr, "DTLSv1_listen -> %d\n", ret);
-                fflush(stderr);
-
-                if (ret==1)
+                if (ret==1) // if the client sents us a "Client Hello" packet with a valid cookie
                 {
                     ht_insert(ht, peer_addr_buf, channel);
                     server_try_doing_handshake(channel);
-                    if (!server_hanshake_is_done(channel)) {
+                    if (!server_hanshake_is_done(channel))
+                    {
                         int e;
                         e = SSL_get_error(channel->ssl, ret);
                         if (SSL_ERROR_SSL == e)
@@ -467,9 +379,126 @@ int main(int argc, char **argv)
 
                     channel = server_udp_channel_new_from_ctx(ctx);
                 }
+                continue;
             }
 
+            server_append_incoming_packet(chnl, packet);
             packet = buffer_new(2000);
+
+            int stateflag = SSL_get_shutdown(chnl->ssl);
+            if (stateflag & SSL_RECEIVED_SHUTDOWN)
+            {
+                if (!(stateflag & SSL_SENT_SHUTDOWN))
+                {
+                    SSL_shutdown(chnl->ssl);
+                }
+                ht_delete(ht, peer_addr_buf);
+                server_udp_channel_free(&chnl);
+                continue;
+            }
+
+            if (!server_hanshake_is_done(chnl))
+            {
+                server_try_doing_handshake(chnl);
+                if (!server_hanshake_is_done(chnl))
+                {
+                    int e;
+                    e = SSL_get_error(chnl->ssl, ret);
+                    if (SSL_ERROR_SSL == e)
+                    {
+                        fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
+                        ERR_print_errors_fp(stderr);
+                        ht_delete(ht, peer_addr_buf);
+                        server_udp_channel_free(&chnl);
+                        continue;
+                    }
+                }
+                continue;
+            }
+
+            // Read and write DTLS application data:
+            char buf[2000];
+            int n;
+            n = server_get(chnl, buf, sizeof(buf));
+            if (n <= 0)
+            {
+                continue;
+            }
+            if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
+            {
+                const char *tmp = sdump_addr(&chnl->data.txaddr);
+                server_put(chnl, tmp, strlen(tmp));
+                server_put(chnl, "\n", 1); // "\n" for openssl s_client
+                continue;
+            }
+
+            if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
+            {
+                server_put(chnl, "pong", 4);
+                server_put(chnl, "\n", 1); // "\n" for openssl s_client
+                continue;
+            }
+
+            if ((n>=5 && strncmp(buf, "echo ", 5)==0))
+            {
+                server_put(chnl, buf+5, n-5);
+                continue;
+            }
+
+            if ((n==5 && strncmp(buf, "echo\n", 5)==0))
+            {
+                server_put(chnl, "\n", 1); // handle "echo\n" without parameters
+                continue;
+            }
+
+            if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
+            {
+                char replymsg[1400];
+                int cnt; // bytes counter
+                int delta;
+                cnt = 0;
+                delta = snprintf(replymsg, sizeof(replymsg), "users:\n");
+                cnt += delta;
+                HT_FOREACH(i, ht)
+                {
+                    delta = snprintf(replymsg+cnt, sizeof(replymsg)-cnt, "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
+                    if (cnt+delta >= sizeof(replymsg)-1)
+                    {
+                        server_put(chnl, replymsg, cnt);
+                        cnt = 0;
+                        delta = snprintf(replymsg, sizeof(replymsg), "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
+                    }
+                    cnt += delta;
+                }
+                server_put(chnl, replymsg, cnt);
+                continue;
+            }
+
+            if (n>3 && strncmp(buf, "bc ", 3)==0)
+            {
+                HT_FOREACH(i, ht)
+                {
+                    server_put((server_udp_channel_t *)i->value, buf+3, n-3);
+                }
+                continue;
+            }
+
+            if (n>=2 && strncmp(buf, "bc", 2)==0)
+            {
+                const char CmdHint[] = "Usage: bc <some text>\n";
+                const int CmdHintLen = sizeof(CmdHint)-1;
+                server_put(chnl, CmdHint, CmdHintLen);
+                continue;
+            }
+
+            /* Got an unrecognized command, send hint message to client */
+            {
+                const char UnknownCmdHint[] = "Sorry, I don't understand...\n";
+                int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
+
+                server_put(chnl, UnknownCmdHint, UnknownCmdHintLen);
+                server_put(chnl, SERVER_HINTS, SERVER_HINTS_LEN);
+            }
         }
     }
 
