@@ -18,11 +18,11 @@ enum
     TIME_OUT = 8000 // ms
 };
 
-typedef struct client_s client_t;
+typedef struct my_server_udp_channel_t server_udp_channel_t;
 
-typedef void (*custom_callback_fn_t)(client_t *client, void *extra_arg);
+typedef void (*custom_callback_fn_t)(server_udp_channel_t *channel, void *extra_arg);
 
-struct client_s
+struct my_server_udp_channel_t
 {
     custom_bio_data_t data;
     SSL *ssl;
@@ -34,7 +34,12 @@ struct client_s
     };
 };
 
-void server_send_greetings_to_client(client_t *client, void *extra_greeting_arg)
+int server_hanshake_is_done(server_udp_channel_t *channel)
+{
+    return channel->is_handshake_accepted;
+}
+
+void server_send_greetings_to_client(server_udp_channel_t *channel, void *extra_greeting_arg)
 {
     const char *DefaultGreetingMsg = "(Server greeting message is empty by default...)\n";
     const char *msg = (const char *)extra_greeting_arg;
@@ -45,29 +50,82 @@ void server_send_greetings_to_client(client_t *client, void *extra_greeting_arg)
         n = strlen(DefaultGreetingMsg);
         msg = DefaultGreetingMsg;
     }
-    SSL_write(client->ssl, msg, n);
+    SSL_write(channel->ssl, msg, n);
 }
 
-int server_accept_handshake_from_client(client_t *cli)
+server_udp_channel_t * server_udp_channel_new_from_ctx(SSL_CTX *ctx)
 {
-    if (cli->is_handshake_accepted)
+    BIO *bio = NULL;
+    struct my_server_udp_channel_t *channel = NULL;
+
+    channel = (server_udp_channel_t *)calloc(1, sizeof(server_udp_channel_t));
+
+    channel->data.txaddr_buf.cap = channel->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
+    memset(&channel->data.txaddr_storage, 0x00, sizeof(struct sockaddr_storage));
+    deque_init(&(channel->data.rxqueue));
+    channel->data.peekmode = 0;
+
+    bio = BIO_new(BIO_s_custom());
+    BIO_set_data(bio, (void *)&channel->data);
+    BIO_set_init(bio, 1);
+    channel->ssl = SSL_new(ctx);
+    SSL_set_bio(channel->ssl, bio, bio);
+
+    channel->is_handshake_accepted = 0;
+    channel->on_handshake_accepted_cb = server_send_greetings_to_client;
+    channel->on_handshake_accepted_extra_arg = "";
+
+    return channel;
+}
+
+void server_udp_channel_free(server_udp_channel_t **pp)
+{
+    server_udp_channel_t *p = NULL;
+
+    p = *pp;
+    SSL_free(p->ssl);
+
+#if 1 // for debugging
+    p->ssl = NULL;
+#endif
+
+    /* Don't use deque_deinit()/deque_free() method to clean up the rxqueue. Use the following steps instead: */
+    deque_t *dp = &(p->data.rxqueue);
+    while (deque_count(dp) > 0)
     {
-        return 1;
+        free(deque_peek(dp));
+        (void) deque_pop(dp);
     }
 
-    if (SSL_accept(cli->ssl) != 1)
+    free(p);
+    *pp = NULL;
+}
+
+void server_append_incoming_packet(server_udp_channel_t *chnl, buffer_t *packet)
+{
+    deque_append(&(chnl->data.rxqueue), packet);
+}
+
+void server_try_doing_handshake(server_udp_channel_t *chnl)
+{
+    if (chnl->is_handshake_accepted)
     {
-        cli->is_handshake_accepted = 0;
-        return 0;
+        return;
     }
 
-    dump_addr(&cli->data.txaddr, "user connected: ");
-    cli->is_handshake_accepted = 1;
-    if (cli->on_handshake_accepted_cb)
+    if (SSL_accept(chnl->ssl) != 1)
     {
-        cli->on_handshake_accepted_cb(cli, cli->on_handshake_accepted_extra_arg);
+        chnl->is_handshake_accepted = 0;
+        return;
     }
-    return 1;
+
+    dump_addr(&chnl->data.txaddr, "user connected: ");
+    chnl->is_handshake_accepted = 1;
+    if (chnl->on_handshake_accepted_cb)
+    {
+        chnl->on_handshake_accepted_cb(chnl, chnl->on_handshake_accepted_extra_arg);
+    }
+    return;
 }
 char cookie_str[] = "BISCUIT!";
 
@@ -214,21 +272,7 @@ int main(int argc, char **argv)
 
     hashtable_t *ht = ht256_new();
 
-    client_t *client = (client_t *)malloc(sizeof(client_t));
-    client->ssl = SSL_new(ctx);
-    deque_init(&client->data.rxqueue);
-    client->data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
-    client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
-    memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
-    client->data.peekmode = 0;
-    client->is_handshake_accepted = 0;
-    client->on_handshake_accepted_cb = server_send_greetings_to_client;
-    client->on_handshake_accepted_extra_arg = "";
-
-                BIO *bio = BIO_new(BIO_s_custom());
-                BIO_set_data(bio, (void *)&client->data);
-                BIO_set_init(bio, 1);
-                SSL_set_bio(client->ssl, bio, bio);
+    server_udp_channel_t *channel = server_udp_channel_new_from_ctx(ctx);
 
     buffer_t *packet;
     packet = buffer_new(2000);
@@ -249,12 +293,6 @@ int main(int argc, char **argv)
             tmp[strlen(tmp)-1] = '\0';
             fprintf(stderr, "wall time: %s\r", tmp);
             new_line = 1;
-
-//             HT_FOREACH(i, ht)
-//             {
-//                 SSL_write(((client_t *)i->value)->ssl, "tick", 4);
-//             }
-
             continue;
         }
 
@@ -264,51 +302,59 @@ int main(int argc, char **argv)
             new_line = 0;
         }
 
-        while ((packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, &client->data.txaddr, (socklen_t *)&client->data.txaddr_buf.len))>0)
+        while (1)
         {
-            dump_addr(&client->data.txaddr, "<< ");
+            buffer_t *peer_addr_buf;
+            socklen_t peer_addr_len;
 
-            client_t *cli = (client_t *)ht_search(ht, &client->data.txaddr_buf);
-            if (cli)
+            peer_addr_len = (socklen_t) channel->data.txaddr_buf.cap;
+            packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, &(channel->data.txaddr), &peer_addr_len);
+            if (packet->len < 0)
             {
-                deque_append(&cli->data.rxqueue, packet);
+                break;
+            }
+            peer_addr_buf = &(channel->data.txaddr_buf);
+            peer_addr_buf->len = (int) peer_addr_len;
+            server_udp_channel_t *chnl = (server_udp_channel_t *) ht_search(ht, peer_addr_buf);
+            if (chnl)
+            {
+                server_append_incoming_packet(chnl, packet);
 
-                int stateflag = SSL_get_shutdown(cli->ssl);
+                int stateflag = SSL_get_shutdown(chnl->ssl);
                 if (stateflag & SSL_RECEIVED_SHUTDOWN)
                 {
                     if (!(stateflag & SSL_SENT_SHUTDOWN))
                     {
-                        SSL_shutdown(cli->ssl);
+                        SSL_shutdown(chnl->ssl);
                     }
-                    SSL_free(cli->ssl);
-                    ht_delete(ht, &cli->data.txaddr_buf);
-                    free(cli);
+                    ht_delete(ht, peer_addr_buf);
+                    server_udp_channel_free(&chnl);
                     continue;
                 }
 
-                if (!cli->is_handshake_accepted)
+                if (!server_hanshake_is_done(chnl))
                 {
-                    if (!server_accept_handshake_from_client(cli))
+                    server_try_doing_handshake(chnl);
+                    if (!server_hanshake_is_done(chnl))
                     {
                         int e;
-                        e = SSL_get_error(client->ssl, ret);
+                        e = SSL_get_error(chnl->ssl, ret);
                         if (SSL_ERROR_SSL == e)
                         {
                             fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
                             ERR_print_errors_fp(stderr);
-                            SSL_free(cli->ssl);
-                            ht_delete(ht, &cli->data.txaddr_buf);
-                            free(cli);
+                            ht_delete(ht, peer_addr_buf);
+                            server_udp_channel_free(&chnl);
                         }
                     }
                 }
 
                 // Read and write DTLS application data:
                 char buf[packet->len];
-                int n = SSL_read(cli->ssl, buf, sizeof(buf));
+                int n = SSL_read(chnl->ssl, buf, sizeof(buf));
                 if (n==0)
                 {
-                    SSL_shutdown(cli->ssl);
+                    SSL_shutdown(chnl->ssl);
                 }
                 else if (n>0)
                 {
@@ -324,97 +370,81 @@ int main(int argc, char **argv)
 
                     if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
                     {
-                        const char *tmp = sdump_addr(&cli->data.txaddr);
-                        SSL_write(cli->ssl, tmp, strlen(tmp));
-                        SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
+                        const char *tmp = sdump_addr(&chnl->data.txaddr);
+                        SSL_write(chnl->ssl, tmp, strlen(tmp));
+                        SSL_write(chnl->ssl, "\n", 1); // "\n" for openssl s_client
                     }
                     else if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
                     {
-                        SSL_write(cli->ssl, "pong", 4);
-                        SSL_write(cli->ssl, "\n", 1); // "\n" for openssl s_client
+                        SSL_write(chnl->ssl, "pong", 4);
+                        SSL_write(chnl->ssl, "\n", 1); // "\n" for openssl s_client
                     }
                     else if ((n>=5 && strncmp(buf, "echo ", 5)==0))
                     {
-                        SSL_write(cli->ssl, buf+5, n-5);
+                        SSL_write(chnl->ssl, buf+5, n-5);
                     }
                     else if ((n==5 && strncmp(buf, "echo\n", 5)==0))
                     {
-                        SSL_write(cli->ssl, "\n", 1); // handle "echo\n" without parameters
+                        SSL_write(chnl->ssl, "\n", 1); // handle "echo\n" without parameters
                     }
                     else if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
                     {
                         n = snprintf(buf, sizeof(buf), "users:");
                         HT_FOREACH(i, ht)
                         {
-                            n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr(&((client_t *)i->value)->data.txaddr));
+                            n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
                         }
 
-                        SSL_write(cli->ssl, buf, n);
+                        SSL_write(chnl->ssl, buf, n);
                     }
                     else if (n>3 && strncmp(buf, "bc ", 3)==0)
                     {
                         HT_FOREACH(i, ht)
                         {
-                            SSL_write(((client_t *)i->value)->ssl, buf+3, n-3);
+                            SSL_write(((server_udp_channel_t *)i->value)->ssl, buf+3, n-3);
                         }
                     }
                     else if (n>=2 && strncmp(buf, "bc", 2)==0)
                     {
                         const char CmdHint[] = "Usage: bc <some text>\n";
                         const int CmdHintLen = sizeof(CmdHint)-1;
-                        SSL_write(cli->ssl, CmdHint, CmdHintLen);
+                        SSL_write(chnl->ssl, CmdHint, CmdHintLen);
                     }
                     else
                     {
                         const char UnknownCmdHint[] = "Sorry, I don't understand...\n";
                         int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
-                        SSL_write(cli->ssl, UnknownCmdHint, UnknownCmdHintLen);
-                        SSL_write(cli->ssl, Hints, HintsLen);
+                        SSL_write(chnl->ssl, UnknownCmdHint, UnknownCmdHintLen);
+                        SSL_write(chnl->ssl, Hints, HintsLen);
                     }
                 }
             }
             else
             {
-                    client->data.txfd = epe.data.fd;
-                    deque_append(&client->data.rxqueue, packet);
-                ret = DTLSv1_listen(client->ssl, NULL);
+                channel->data.txfd = epe.data.fd;
+                server_append_incoming_packet(channel, packet);
+                ret = DTLSv1_listen(channel->ssl, NULL);
                 fprintf(stderr, "DTLSv1_listen -> %d\n", ret);
                 fflush(stderr);
 
                 if (ret==1)
                 {
-                    buffer_t *key = &client->data.txaddr_buf;
-                    ht_insert(ht, key, client);
-
-                    if (!server_accept_handshake_from_client(client)) {
+                    ht_insert(ht, peer_addr_buf, channel);
+                    server_try_doing_handshake(channel);
+                    if (!server_hanshake_is_done(channel)) {
                         int e;
-                        e = SSL_get_error(client->ssl, ret);
+                        e = SSL_get_error(channel->ssl, ret);
                         if (SSL_ERROR_SSL == e)
                         {
                             fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
                             ERR_print_errors_fp(stderr);
-                            SSL_free(client->ssl);
-                            ht_delete(ht, &client->data.txaddr_buf);
-                            free(client);
+                            SSL_free(channel->ssl);
+                            ht_delete(ht, peer_addr_buf);
+                            free(channel);
                         }
                     }
 
-                    client = (client_t *)malloc(sizeof(client_t));
-                    client->ssl = SSL_new(ctx);
-                    deque_init(&client->data.rxqueue);
-                    client->data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
-                    client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
-                    memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
-                    client->data.peekmode = 0;
-                    client->is_handshake_accepted = 0;
-                    client->on_handshake_accepted_cb = server_send_greetings_to_client;
-                    client->on_handshake_accepted_extra_arg = "";
-
-                    BIO *bio = BIO_new(BIO_s_custom());
-                    BIO_set_data(bio, (void *)&client->data);
-                    BIO_set_init(bio, 1);
-                    SSL_set_bio(client->ssl, bio, bio);
-
+                    channel = server_udp_channel_new_from_ctx(ctx);
                 }
             }
 
@@ -424,15 +454,15 @@ int main(int argc, char **argv)
 
     buffer_free(packet);
 
-    SSL_free(client->ssl);
-    free(client);
+    server_udp_channel_free(&channel);
 
+    server_udp_channel_t *chnl = NULL;
     HT_FOREACH(i, ht)
     {
-        SSL_shutdown(((client_t *)i->value)->ssl);
-        dump_addr((struct sockaddr *)&((client_t *)i->value)->data.txaddr, "|| ");
-        SSL_free(((client_t *)i->value)->ssl);
-        free((client_t *)i->value);
+        chnl = (server_udp_channel_t *)i->value;
+        SSL_shutdown(chnl->ssl);
+        dump_addr(&(chnl->data.txaddr), "|| ");
+        server_udp_channel_free(&chnl);
     }
     ht_free(ht);
 
