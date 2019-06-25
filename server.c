@@ -390,13 +390,24 @@ int main(int argc, char **argv)
                     }
                     else if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
                     {
-                        n = snprintf(buf, sizeof(buf), "users:");
+                        char replymsg[1400];
+                        int cnt; // bytes counter
+                        int delta;
+                        cnt = 0;
+                        delta = snprintf(replymsg, sizeof(replymsg), "users:\n");
+                        cnt += delta;
                         HT_FOREACH(i, ht)
                         {
-                            n += snprintf(buf+n, sizeof(buf)-n, "\n%s\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
+                            delta = snprintf(replymsg+cnt, sizeof(replymsg)-cnt, "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
+                            if (cnt+delta >= sizeof(replymsg)-1)
+                            {
+                                SSL_write(chnl->ssl, replymsg, cnt);
+                                cnt = 0;
+                                delta = snprintf(replymsg, sizeof(replymsg), "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
+                            }
+                            cnt += delta;
                         }
-
-                        SSL_write(chnl->ssl, buf, n);
+                        SSL_write(chnl->ssl, replymsg, cnt);
                     }
                     else if (n>3 && strncmp(buf, "bc ", 3)==0)
                     {
