@@ -127,6 +127,15 @@ void server_try_doing_handshake(server_udp_channel_t *chnl)
     }
     return;
 }
+
+void server_send_application_data(server_udp_channel_t *chnl, const void *datablock, size_t n)
+{
+    int e;
+    size_t written = 0;
+
+    SSL_write_ex(chnl->ssl, datablock, n, &written);
+}
+
 char cookie_str[] = "BISCUIT!";
 
 int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len)
@@ -372,21 +381,21 @@ int main(int argc, char **argv)
                     if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
                     {
                         const char *tmp = sdump_addr(&chnl->data.txaddr);
-                        SSL_write(chnl->ssl, tmp, strlen(tmp));
-                        SSL_write(chnl->ssl, "\n", 1); // "\n" for openssl s_client
+                        server_send_application_data(chnl, tmp, strlen(tmp));
+                        server_send_application_data(chnl, "\n", 1); // "\n" for openssl s_client
                     }
                     else if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
                     {
-                        SSL_write(chnl->ssl, "pong", 4);
-                        SSL_write(chnl->ssl, "\n", 1); // "\n" for openssl s_client
+                        server_send_application_data(chnl, "pong", 4);
+                        server_send_application_data(chnl, "\n", 1); // "\n" for openssl s_client
                     }
                     else if ((n>=5 && strncmp(buf, "echo ", 5)==0))
                     {
-                        SSL_write(chnl->ssl, buf+5, n-5);
+                        server_send_application_data(chnl, buf+5, n-5);
                     }
                     else if ((n==5 && strncmp(buf, "echo\n", 5)==0))
                     {
-                        SSL_write(chnl->ssl, "\n", 1); // handle "echo\n" without parameters
+                        server_send_application_data(chnl, "\n", 1); // handle "echo\n" without parameters
                     }
                     else if ((n==5 && strncmp(buf, "stats", 5)==0) || (n==6 && strncmp(buf, "stats\n", 6)==0))
                     {
@@ -401,33 +410,33 @@ int main(int argc, char **argv)
                             delta = snprintf(replymsg+cnt, sizeof(replymsg)-cnt, "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
                             if (cnt+delta >= sizeof(replymsg)-1)
                             {
-                                SSL_write(chnl->ssl, replymsg, cnt);
+                                server_send_application_data(chnl, replymsg, cnt);
                                 cnt = 0;
                                 delta = snprintf(replymsg, sizeof(replymsg), "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
                             }
                             cnt += delta;
                         }
-                        SSL_write(chnl->ssl, replymsg, cnt);
+                        server_send_application_data(chnl, replymsg, cnt);
                     }
                     else if (n>3 && strncmp(buf, "bc ", 3)==0)
                     {
                         HT_FOREACH(i, ht)
                         {
-                            SSL_write(((server_udp_channel_t *)i->value)->ssl, buf+3, n-3);
+                            server_send_application_data((server_udp_channel_t *)i->value, buf+3, n-3);
                         }
                     }
                     else if (n>=2 && strncmp(buf, "bc", 2)==0)
                     {
                         const char CmdHint[] = "Usage: bc <some text>\n";
                         const int CmdHintLen = sizeof(CmdHint)-1;
-                        SSL_write(chnl->ssl, CmdHint, CmdHintLen);
+                        server_send_application_data(chnl, CmdHint, CmdHintLen);
                     }
                     else
                     {
                         const char UnknownCmdHint[] = "Sorry, I don't understand...\n";
                         int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
-                        SSL_write(chnl->ssl, UnknownCmdHint, UnknownCmdHintLen);
-                        SSL_write(chnl->ssl, Hints, HintsLen);
+                        server_send_application_data(chnl, UnknownCmdHint, UnknownCmdHintLen);
+                        server_send_application_data(chnl, Hints, HintsLen);
                     }
                 }
             }
