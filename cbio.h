@@ -26,6 +26,6 @@ int BIO_s_custom_destroy(BIO *b);
 // long BIO_s_custom_callback_ctrl(BIO *, int, BIO_info_cb *);
 
 BIO_METHOD *BIO_s_custom(void);
-void BIO_s_custom_meth_free(void);
-
+void BIO_s_custom_meth_init(void);
+void BIO_s_custom_meth_deinit(void);
 #endif /* CBIO_H */

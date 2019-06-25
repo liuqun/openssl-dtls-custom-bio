@@ -231,6 +231,7 @@ int main(int argc, char **argv)
 
     SSL_load_error_strings();
     SSL_library_init();
+    BIO_s_custom_meth_init();
 
     const SSL_METHOD *mtd = DTLS_server_method();
     SSL_CTX *ctx = SSL_CTX_new(mtd);
@@ -465,9 +466,6 @@ int main(int argc, char **argv)
         server_udp_channel_free(&chnl);
     }
     ht_free(ht);
-
-    BIO_s_custom_meth_free();
-
     SSL_CTX_free(ctx);
 
     DEQUE_FOREACH(i, addrlist)
@@ -475,5 +473,6 @@ int main(int argc, char **argv)
 
     deque_free(addrlist);
 
+    BIO_s_custom_meth_deinit();
     return 0;
 }

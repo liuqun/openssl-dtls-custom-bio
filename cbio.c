@@ -183,31 +183,39 @@ int BIO_s_custom_destroy(BIO *b)
 
 // long BIO_s_custom_callback_ctrl(BIO *, int, BIO_info_cb *);
 
-BIO_METHOD *_BIO_s_custom = NULL;
+static BIO_METHOD *_BIO_s_custom = NULL;
 BIO_METHOD *BIO_s_custom(void)
 {
     if (_BIO_s_custom)
+    {
         return _BIO_s_custom;
+    }
+    BIO_s_custom_meth_init();
+    return _BIO_s_custom;
+}
+
+void BIO_s_custom_meth_init(void)
+{
+    if (_BIO_s_custom)
+    {
+        return;
+    }
 
     _BIO_s_custom = BIO_meth_new(BIO_get_new_index()|BIO_TYPE_SOURCE_SINK, "BIO_s_custom");
 
-//     BIO_meth_set_write_ex(_BIO_s_custom, BIO_s_custom_write_ex);
     BIO_meth_set_write(_BIO_s_custom, BIO_s_custom_write);
-//     BIO_meth_set_read_ex(_BIO_s_custom, BIO_s_custom_read_ex);
     BIO_meth_set_read(_BIO_s_custom, BIO_s_custom_read);
     BIO_meth_set_ctrl(_BIO_s_custom, BIO_s_custom_ctrl);
     BIO_meth_set_create(_BIO_s_custom, BIO_s_custom_create);
     BIO_meth_set_destroy(_BIO_s_custom, BIO_s_custom_destroy);
-//     BIO_meth_set_callback_ctrl(_BIO_s_custom, BIO_s_custom_callback_ctrl);
-
-    return _BIO_s_custom;
 }
 
-void BIO_s_custom_meth_free(void)
+void BIO_s_custom_meth_deinit(void)
 {
     if (_BIO_s_custom)
+    {
         BIO_meth_free(_BIO_s_custom);
-
+    }
     _BIO_s_custom = NULL;
 }
 

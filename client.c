@@ -186,6 +186,7 @@ int main(int argc, char **argv)
 
     ssl = SSL_new(ctx);
 
+    BIO_s_custom_meth_init();
     BIO *custom_bio = BIO_new(BIO_s_custom());
     BIO_set_data(custom_bio, (void *)&cbio_data);
     BIO_set_init(custom_bio, 1);
@@ -284,7 +285,7 @@ int main(int argc, char **argv)
     SSL_free(ssl);
     SSL_CTX_free(ctx);
 
-    BIO_s_custom_meth_free();
+    BIO_s_custom_meth_deinit();
 
     rl_cleanup_after_signal();
     fputc('\n', stderr);
