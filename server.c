@@ -136,7 +136,7 @@ int server_get(server_udp_channel_t *chnl, void *out_buf, size_t out_buf_max_byt
     return ret;
 }
 
-void server_try_doing_handshake(server_udp_channel_t *chnl)
+void server_try_accepting_handshake(server_udp_channel_t *chnl)
 {
     if (chnl->is_handshake_accepted)
     {
@@ -362,21 +362,7 @@ int main(int argc, char **argv)
                 if (ret==1) // if the client sents us a "Client Hello" packet with a valid cookie
                 {
                     ht_insert(ht, peer_addr_buf, channel);
-                    server_try_doing_handshake(channel);
-                    if (!server_hanshake_is_done(channel))
-                    {
-                        int e;
-                        e = SSL_get_error(channel->ssl, ret);
-                        if (SSL_ERROR_SSL == e)
-                        {
-                            fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
-                            ERR_print_errors_fp(stderr);
-                            SSL_free(channel->ssl);
-                            ht_delete(ht, peer_addr_buf);
-                            free(channel);
-                        }
-                    }
-
+                    server_try_accepting_handshake(channel);
                     channel = server_udp_channel_new_from_ctx(ctx);
                 }
                 continue;
@@ -399,20 +385,7 @@ int main(int argc, char **argv)
 
             if (!server_hanshake_is_done(chnl))
             {
-                server_try_doing_handshake(chnl);
-                if (!server_hanshake_is_done(chnl))
-                {
-                    int e;
-                    e = SSL_get_error(chnl->ssl, ret);
-                    if (SSL_ERROR_SSL == e)
-                    {
-                        fprintf(stderr, "!!!! SSL_get_error -> %d\n", e);
-                        ERR_print_errors_fp(stderr);
-                        ht_delete(ht, peer_addr_buf);
-                        server_udp_channel_free(&chnl);
-                        continue;
-                    }
-                }
+                server_try_accepting_handshake(chnl);
                 continue;
             }
 
