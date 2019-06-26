@@ -29,28 +29,28 @@ enum
     TIME_OUT = 8000 // ms
 };
 
-typedef struct my_server_udp_channel_t server_udp_channel_t;
+typedef struct _server_session_t server_session_t;
 
-typedef void (*custom_callback_fn_t)(server_udp_channel_t *channel, void *extra_arg);
+typedef void (*session_callback_fn_t)(server_session_t *session, void *extra_arg);
 
-struct my_server_udp_channel_t
+struct _server_session_t
 {
     custom_bio_data_t data;
     SSL *ssl;
 
     int is_handshake_accepted;
     struct {
-        custom_callback_fn_t on_handshake_accepted_cb;
+        session_callback_fn_t on_handshake_accepted_cb;
         void *on_handshake_accepted_extra_arg;
     };
 };
 
-int server_hanshake_is_done(server_udp_channel_t *channel)
+int server_hanshake_is_done(server_session_t *p)
 {
-    return channel->is_handshake_accepted;
+    return p->is_handshake_accepted;
 }
 
-void server_send_greetings_to_client(server_udp_channel_t *channel, void *extra_greeting_arg)
+void server_send_greetings_to_client(server_session_t *p, void *extra_greeting_arg)
 {
     const char *DefaultGreetingMsg = "(Server greeting message is empty by default...)\n";
     const char *msg = (const char *)extra_greeting_arg;
@@ -61,37 +61,37 @@ void server_send_greetings_to_client(server_udp_channel_t *channel, void *extra_
         n = strlen(DefaultGreetingMsg);
         msg = DefaultGreetingMsg;
     }
-    SSL_write(channel->ssl, msg, n);
+    SSL_write(p->ssl, msg, n);
 }
 
-server_udp_channel_t * server_udp_channel_new_from_ctx(SSL_CTX *ctx)
+server_session_t * server_session_new(SSL_CTX *ctx)
 {
     BIO *bio = NULL;
-    struct my_server_udp_channel_t *channel = NULL;
+    struct _server_session_t *p = NULL;
 
-    channel = (server_udp_channel_t *)calloc(1, sizeof(server_udp_channel_t));
+    p = (server_session_t *)calloc(1, sizeof(server_session_t));
 
-    channel->data.txaddr_buf.cap = channel->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
-    memset(&channel->data.txaddr_storage, 0x00, sizeof(struct sockaddr_storage));
-    deque_init(&(channel->data.rxqueue));
-    channel->data.peekmode = 0;
+    p->data.txaddr_buf.cap = p->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
+    memset(&p->data.txaddr_storage, 0x00, sizeof(struct sockaddr_storage));
+    deque_init(&(p->data.rxqueue));
+    p->data.peekmode = 0;
 
     bio = BIO_new(BIO_s_custom());
-    BIO_set_data(bio, (void *)&channel->data);
+    BIO_set_data(bio, (void *)&p->data);
     BIO_set_init(bio, 1);
-    channel->ssl = SSL_new(ctx);
-    SSL_set_bio(channel->ssl, bio, bio);
+    p->ssl = SSL_new(ctx);
+    SSL_set_bio(p->ssl, bio, bio);
 
-    channel->is_handshake_accepted = 0;
-    channel->on_handshake_accepted_cb = server_send_greetings_to_client;
-    channel->on_handshake_accepted_extra_arg = SERVER_HINTS;
+    p->is_handshake_accepted = 0;
+    p->on_handshake_accepted_cb = server_send_greetings_to_client;
+    p->on_handshake_accepted_extra_arg = SERVER_HINTS;
 
-    return channel;
+    return p;
 }
 
-void server_udp_channel_free(server_udp_channel_t **pp)
+void server_session_free(server_session_t **pp)
 {
-    server_udp_channel_t *p = NULL;
+    server_session_t *p = NULL;
 
     p = *pp;
     SSL_free(p->ssl);
@@ -112,19 +112,19 @@ void server_udp_channel_free(server_udp_channel_t **pp)
     *pp = NULL;
 }
 
-void server_append_incoming_packet(server_udp_channel_t *chnl, buffer_t *packet)
+void server_append_incoming_packet(server_session_t *p, buffer_t *packet)
 {
-    deque_append(&(chnl->data.rxqueue), packet);
+    deque_append(&(p->data.rxqueue), packet);
 }
 
-int server_get(server_udp_channel_t *chnl, void *out_buf, size_t out_buf_max_bytes)
+int server_decrypt_incomming_packet(server_session_t *p, void *out_plaintext_buf, size_t out_buf_max_bytes)
 {
     size_t decrypted=0;
     int ret;
 
-    if ((ret = SSL_read(chnl->ssl, out_buf, out_buf_max_bytes)) < 0)
+    if ((ret = SSL_read(p->ssl, out_plaintext_buf, out_buf_max_bytes)) < 0)
     {
-        int e = SSL_get_error(chnl->ssl, ret);
+        int e = SSL_get_error(p->ssl, ret);
         if (SSL_ERROR_SSL == e)
         {
             fprintf(stderr, "SSL_ERROR_SSL!\n");
@@ -135,31 +135,31 @@ int server_get(server_udp_channel_t *chnl, void *out_buf, size_t out_buf_max_byt
     return ret; // 成功时: 返回值大于 0 且小于等于 out_buf_max_bytes, 表示输出数据有效字节数.
 }
 
-void server_try_accepting_handshake(server_udp_channel_t *chnl)
+void server_try_accepting_handshake(server_session_t *p)
 {
-    if (chnl->is_handshake_accepted)
+    if (p->is_handshake_accepted)
     {
         return;
     }
 
-    if (SSL_accept(chnl->ssl) != 1)
+    if (SSL_accept(p->ssl) != 1)
     {
-        chnl->is_handshake_accepted = 0;
+        p->is_handshake_accepted = 0;
         return;
     }
 
-    dump_addr(&chnl->data.txaddr, "user connected: ");
-    chnl->is_handshake_accepted = 1;
-    if (chnl->on_handshake_accepted_cb)
+    dump_addr(&p->data.txaddr, "user connected: ");
+    p->is_handshake_accepted = 1;
+    if (p->on_handshake_accepted_cb)
     {
-        chnl->on_handshake_accepted_cb(chnl, chnl->on_handshake_accepted_extra_arg);
+        p->on_handshake_accepted_cb(p, p->on_handshake_accepted_extra_arg);
     }
     return;
 }
 
-void server_put(server_udp_channel_t *chnl, const void *datablock, size_t blocksize)
+void server_encrypt_and_send(server_session_t *p, const void *in_plaintext_block, size_t blocksize)
 {
-    SSL_write(chnl->ssl, datablock, (int)blocksize);
+    SSL_write(p->ssl, in_plaintext_block, (int)blocksize);
 }
 
 char cookie_str[] = "BISCUIT!";
@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 
     hashtable_t *ht = ht256_new();
 
-    server_udp_channel_t *channel = server_udp_channel_new_from_ctx(ctx);
+    server_session_t *session = server_session_new(ctx);
 
     buffer_t *packet;
     packet = buffer_new(2000);
@@ -343,50 +343,50 @@ int main(int argc, char **argv)
             buffer_t *peer_addr_buf;
             socklen_t peer_addr_len;
 
-            peer_addr_len = (socklen_t) channel->data.txaddr_buf.cap;
-            packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, &(channel->data.txaddr), &peer_addr_len);
+            peer_addr_len = (socklen_t) session->data.txaddr_buf.cap;
+            packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, &(session->data.txaddr), &peer_addr_len);
             if (packet->len < 0)
             {
                 break;
             }
-            peer_addr_buf = &(channel->data.txaddr_buf);
+            peer_addr_buf = &(session->data.txaddr_buf);
             peer_addr_buf->len = (int) peer_addr_len;
-            server_udp_channel_t *chnl = (server_udp_channel_t *) ht_search(ht, peer_addr_buf);
-            if (!chnl)
+            server_session_t *existing_sess = (server_session_t *) ht_search(ht, peer_addr_buf);
+            if (!existing_sess)
             {
-                channel->data.txfd = epe.data.fd;
-                server_append_incoming_packet(channel, packet);
+                session->data.txfd = epe.data.fd;
+                server_append_incoming_packet(session, packet);
                 packet = buffer_new(2000);
-                ret = DTLSv1_listen(channel->ssl, NULL);
+                ret = DTLSv1_listen(session->ssl, NULL);
                 if (ret==1) // if the client sents us a "Client Hello" packet with a valid cookie
                 {
-                    ht_insert(ht, peer_addr_buf, channel);
-                    server_try_accepting_handshake(channel);
-                    channel = server_udp_channel_new_from_ctx(ctx);
+                    ht_insert(ht, peer_addr_buf, session);
+                    server_try_accepting_handshake(session);
+                    session = server_session_new(ctx);
                 }
                 continue;
             }
 
-            server_append_incoming_packet(chnl, packet);
+            server_append_incoming_packet(existing_sess, packet);
             packet = buffer_new(2000);
 
-            if (!server_hanshake_is_done(chnl))
+            if (!server_hanshake_is_done(existing_sess))
             {
-                server_try_accepting_handshake(chnl);
+                server_try_accepting_handshake(existing_sess);
                 continue;
             }
 
             // Read and write DTLS application data:
             char buf[2000];
             int n;
-            if ((n = server_get(chnl, buf, sizeof(buf))) <= 0)
+            if ((n = server_decrypt_incomming_packet(existing_sess, buf, sizeof(buf))) <= 0)
             {
-                fprintf(stderr, "Info: No more application data packet from peer IP:port = %s\n", sdump_addr(&(chnl->data.txaddr)));
-                int stateflag = SSL_get_shutdown(chnl->ssl);
+                fprintf(stderr, "Info: No more application data packet from peer IP:port = %s\n", sdump_addr(&(existing_sess->data.txaddr)));
+                int stateflag = SSL_get_shutdown(existing_sess->ssl);
                 if (stateflag & SSL_RECEIVED_SHUTDOWN)
                 {
                     int shutdown_status;
-                    shutdown_status = SSL_shutdown(chnl->ssl);
+                    shutdown_status = SSL_shutdown(existing_sess->ssl);
                     if (1 == shutdown_status)
                     {
                         fprintf(stderr, "DEBUG: SSL_shutdown() success.\n");
@@ -397,35 +397,34 @@ int main(int argc, char **argv)
                         fprintf(stderr, "WARNING: SSL_shutdown() returns 0x%X\n", shutdown_status);
                     }
                     ht_delete(ht, peer_addr_buf);
-                    fprintf(stderr, "Info: peer %s has been removed from hash table\n", sdump_addr(&(chnl->data.txaddr)));
-                    server_udp_channel_free(&chnl);
+                    fprintf(stderr, "Info: peer %s has been removed from hash table\n", sdump_addr(&(existing_sess->data.txaddr)));
+                    server_session_free(&existing_sess);
                 }
                 continue;
             }
             if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
             {
-                const char *tmp = sdump_addr(&chnl->data.txaddr);
-                server_put(chnl, tmp, strlen(tmp));
-                server_put(chnl, "\n", 1); // "\n" for openssl s_client
+                const char *tmp = sdump_addr(&existing_sess->data.txaddr);
+                server_encrypt_and_send(existing_sess, tmp, strlen(tmp));
+                server_encrypt_and_send(existing_sess, "\n", 1); // "\n" for openssl s_client
                 continue;
             }
 
             if ((n==4 && strncmp(buf, "ping", 4)==0) || (n==5 && strncmp(buf, "ping\n", 5)==0))
             {
-                server_put(chnl, "pong", 4);
-                server_put(chnl, "\n", 1); // "\n" for openssl s_client
+                server_encrypt_and_send(existing_sess, "pong\n", 5);
                 continue;
             }
 
             if ((n>=5 && strncmp(buf, "echo ", 5)==0))
             {
-                server_put(chnl, buf+5, n-5);
+                server_encrypt_and_send(existing_sess, buf+5, n-5);
                 continue;
             }
 
             if ((n==5 && strncmp(buf, "echo\n", 5)==0))
             {
-                server_put(chnl, "\n", 1); // handle "echo\n" without parameters
+                server_encrypt_and_send(existing_sess, "\n", 1); // handle "echo\n" without parameters
                 continue;
             }
 
@@ -439,16 +438,16 @@ int main(int argc, char **argv)
                 cnt += delta;
                 HT_FOREACH(i, ht)
                 {
-                    delta = snprintf(replymsg+cnt, sizeof(replymsg)-cnt, "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
+                    delta = snprintf(replymsg+cnt, sizeof(replymsg)-cnt, "%s;\n", sdump_addr(&((server_session_t *)i->value)->data.txaddr));
                     if (cnt+delta >= sizeof(replymsg)-1)
                     {
-                        server_put(chnl, replymsg, cnt);
+                        server_encrypt_and_send(existing_sess, replymsg, cnt);
                         cnt = 0;
-                        delta = snprintf(replymsg, sizeof(replymsg), "%s;\n", sdump_addr(&((server_udp_channel_t *)i->value)->data.txaddr));
+                        delta = snprintf(replymsg, sizeof(replymsg), "%s;\n", sdump_addr(&((server_session_t *)i->value)->data.txaddr));
                     }
                     cnt += delta;
                 }
-                server_put(chnl, replymsg, cnt);
+                server_encrypt_and_send(existing_sess, replymsg, cnt);
                 continue;
             }
 
@@ -456,7 +455,7 @@ int main(int argc, char **argv)
             {
                 HT_FOREACH(i, ht)
                 {
-                    server_put((server_udp_channel_t *)i->value, buf+3, n-3);
+                    server_encrypt_and_send((server_session_t *)i->value, buf+3, n-3);
                 }
                 continue;
             }
@@ -465,7 +464,7 @@ int main(int argc, char **argv)
             {
                 const char CmdHint[] = "Usage: bc <some text>\n";
                 const int CmdHintLen = sizeof(CmdHint)-1;
-                server_put(chnl, CmdHint, CmdHintLen);
+                server_encrypt_and_send(existing_sess, CmdHint, CmdHintLen);
                 continue;
             }
 
@@ -474,23 +473,23 @@ int main(int argc, char **argv)
                 const char UnknownCmdHint[] = "Sorry, I don't understand...\n";
                 int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
 
-                server_put(chnl, UnknownCmdHint, UnknownCmdHintLen);
-                server_put(chnl, SERVER_HINTS, SERVER_HINTS_LEN);
+                server_encrypt_and_send(existing_sess, UnknownCmdHint, UnknownCmdHintLen);
+                server_encrypt_and_send(existing_sess, SERVER_HINTS, SERVER_HINTS_LEN);
             }
         }
     }
 
     buffer_free(packet);
 
-    server_udp_channel_free(&channel);
+    server_session_free(&session);
 
-    server_udp_channel_t *chnl = NULL;
+    server_session_t *sess = NULL;
     HT_FOREACH(i, ht)
     {
-        chnl = (server_udp_channel_t *)i->value;
-        SSL_shutdown(chnl->ssl);
-        dump_addr(&(chnl->data.txaddr), "|| ");
-        server_udp_channel_free(&chnl);
+        sess = (server_session_t *)i->value;
+        SSL_shutdown(sess->ssl);
+        dump_addr(&(sess->data.txaddr), "|| ");
+        server_session_free(&sess);
     }
     ht_free(ht);
     SSL_CTX_free(ctx);
