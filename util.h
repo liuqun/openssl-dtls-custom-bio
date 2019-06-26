@@ -27,22 +27,6 @@ typedef struct buffer_s {
     unsigned char buf[];
 } buffer_t;
 
-typedef struct hashtable_s {
-    int (*hash)(buffer_t *bp);
-    int nbucket;
-    deque_t bucket[];
-} hashtable_t;
-
-typedef struct ht_node_s {
-    buffer_t *key;
-    void *value;
-} ht_node_t;
-
-#define HT_FOREACH(htnp, htp) \
-for (int _tmp_index=0; _tmp_index<(htp)->nbucket; ++_tmp_index) \
-    for (deque_item_t *_tmp_item=((htp)->bucket[_tmp_index].head); _tmp_item; _tmp_item=_tmp_item->next) \
-        for (ht_node_t *(htnp)=(ht_node_t *)_tmp_item->p; htnp; htnp=NULL)
-
 deque_t *deque_new(void);
 void deque_init(deque_t *dp);
 void deque_deinit(deque_t *dp);
@@ -61,14 +45,6 @@ buffer_t *buffer_new(int cap);
 void buffer_init(buffer_t *bp, int cap);
 void buffer_free(buffer_t *bp);
 int buffer_eq(buffer_t *a, buffer_t *b);
-
-hashtable_t *ht256_new(void);
-hashtable_t *ht16_new(void);
-void ht_deinit(hashtable_t *htp);
-void ht_free(hashtable_t *htp);
-void *ht_search(hashtable_t *htp, buffer_t *key);
-void *ht_insert(hashtable_t *htp, buffer_t *key, void *value);
-int ht_delete(hashtable_t *htp, buffer_t *key);
 
 void dump_hex(const unsigned char *buf, size_t len, const char *indent);
 void dump_addr(struct sockaddr *sa, const char *indent);

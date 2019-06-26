@@ -186,6 +186,30 @@ void signal_handler(int sig)
     fflush(stderr);
 }
 
+typedef struct hashtable_s {
+    int (*hash)(buffer_t *bp);
+    int nbucket;
+    deque_t bucket[];
+} hashtable_t;
+
+typedef struct ht_node_s {
+    buffer_t *key;
+    void *value;
+} ht_node_t;
+
+hashtable_t *ht256_new(void);
+void ht_reset(hashtable_t *htp);
+void ht_free(hashtable_t *htp);
+void *ht_search(hashtable_t *htp, buffer_t *key);
+void *ht_insert(hashtable_t *htp, buffer_t *key, void *value);
+int ht_delete(hashtable_t *htp, buffer_t *key);
+
+#define HT_FOREACH(htnp, htp) \
+for (int _tmp_index=0; _tmp_index<(htp)->nbucket; ++_tmp_index) \
+    for (deque_item_t *_tmp_item=((htp)->bucket[_tmp_index].head); _tmp_item; _tmp_item=_tmp_item->next) \
+        for (ht_node_t *(htnp)=(ht_node_t *)_tmp_item->p; htnp; htnp=NULL)
+
+
 int main(int argc, char **argv)
 {
     int bind_error;
@@ -503,5 +527,147 @@ int main(int argc, char **argv)
     deque_free(addrlist);
 
     BIO_s_custom_meth_deinit();
+    return 0;
+}
+
+typedef union access_u
+{
+    uint_fast64_t u64;
+    uint32_t u32[2];
+    uint16_t u16[4];
+    uint8_t u8[8];
+} access_t;
+
+static int ht256_hash(buffer_t *bp)
+{
+    access_t sum = {0};
+    uintptr_t p = (uintptr_t)bp->buf;
+    int n = bp->len;
+
+    if (p&0x01 && n>=1)
+    {
+        *sum.u8 ^= *(uint8_t *)p++;
+        n -= 1;
+    }
+    if (p&0x02 && n>=2)
+    {
+        *sum.u16 ^= *(uint16_t *)p++;
+        n -= 2;
+    }
+    if (p&0x04 && n>=4)
+    {
+        *sum.u32 ^= *(uint32_t *)p++;
+        n -= 4;
+    }
+    while (n>=8)
+    {
+        sum.u64 ^= *(uint64_t *)p++;
+        n -= 8;
+    }
+    sum.u32[0] ^= sum.u32[1];
+    sum.u32[1] = 0;
+    if (n>=4)
+    {
+        *sum.u32 ^= *(uint32_t *)p++;
+        n -= 4;
+    }
+    sum.u16[0] ^= sum.u16[1];
+    sum.u16[1] = 0;
+    if (n>=2)
+    {
+        *sum.u16 ^= *(uint16_t *)p++;
+        n -= 2;
+    }
+    sum.u8[0] ^= sum.u8[1];
+    sum.u8[1] = 0;
+    if (n>=1)
+    {
+        *sum.u8 ^= *(uint8_t *)p++;
+        n -= 1;
+    }
+
+
+    return sum.u8[0];
+}
+
+hashtable_t *ht256_new(void)
+{
+    hashtable_t *htp = (hashtable_t  *)malloc(sizeof(hashtable_t)+256*sizeof(deque_t));
+    htp->hash = ht256_hash;
+    htp->nbucket = 256;
+
+    for (int i=0; i<256; ++i)
+    {
+        deque_init(htp->bucket+i);
+    }
+    return htp;
+}
+
+void ht_reset(hashtable_t *htp)
+{
+    assert(htp);
+
+    for (int i=0; i<htp->nbucket; ++i)
+    {
+        deque_t *dp = &htp->bucket[i];
+        while (dp->head)
+        {
+            ht_node_t *hnp = (ht_node_t *)deque_popleft(dp);
+            free(hnp);
+        }
+    }
+}
+
+void ht_free(hashtable_t *htp)
+{
+    assert(htp);
+    ht_reset(htp);
+    free(htp);
+}
+
+void *ht_search(hashtable_t *htp, buffer_t *key)
+{
+    assert(htp);
+    assert(key);
+
+    DEQUE_FOREACH(i, htp->bucket+htp->hash(key))
+    {
+        if (buffer_eq(key, ((ht_node_t *)i->p)->key))
+        {
+            return ((ht_node_t *)i->p)->value;
+        }
+    }
+
+    return NULL;
+}
+
+void *ht_insert(hashtable_t *htp, buffer_t *key, void *value)
+{
+    assert(htp);
+    assert(key);
+
+    ht_node_t *node = (ht_node_t *)malloc(sizeof(ht_node_t));
+    node->key = key;
+    node->value = value;
+
+    deque_appendleft(&htp->bucket[htp->hash(key)], (void *)node);
+}
+
+int ht_delete(hashtable_t *htp, buffer_t *key)
+{
+    assert(htp);
+    assert(key);
+
+    deque_t *dp = htp->bucket+htp->hash(key);
+    DEQUE_FOREACH(i, dp)
+    {
+        if (buffer_eq(key, ((ht_node_t *)i->p)->key))
+        {
+            free((ht_node_t *)i->p);
+            deque_remove(dp, i);
+            return 1;
+        }
+    }
+
     return 0;
 }
