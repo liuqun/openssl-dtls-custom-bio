@@ -120,7 +120,6 @@ void server_append_incoming_packet(server_udp_channel_t *chnl, buffer_t *packet)
 int server_get(server_udp_channel_t *chnl, void *out_buf, size_t out_buf_max_bytes)
 {
     size_t decrypted=0;
-    int max = (int) out_buf_max_bytes;
     int ret;
 
     if ((ret = SSL_read(chnl->ssl, out_buf, out_buf_max_bytes)) < 0)
@@ -131,9 +130,9 @@ int server_get(server_udp_channel_t *chnl, void *out_buf, size_t out_buf_max_byt
             fprintf(stderr, "SSL_ERROR_SSL!\n");
             ERR_print_errors_fp(stderr);
         }
-        return 0;
+        return 0; // 失败时: 返回 0 表示失败 (当心: 即使ret<0, 函数server_get()仍返回0)
     }
-    return ret;
+    return ret; // 成功时: 返回值大于 0 且小于等于 out_buf_max_bytes, 表示输出数据有效字节数.
 }
 
 void server_try_accepting_handshake(server_udp_channel_t *chnl)
@@ -371,18 +370,6 @@ int main(int argc, char **argv)
             server_append_incoming_packet(chnl, packet);
             packet = buffer_new(2000);
 
-            int stateflag = SSL_get_shutdown(chnl->ssl);
-            if (stateflag & SSL_RECEIVED_SHUTDOWN)
-            {
-                if (!(stateflag & SSL_SENT_SHUTDOWN))
-                {
-                    SSL_shutdown(chnl->ssl);
-                }
-                ht_delete(ht, peer_addr_buf);
-                server_udp_channel_free(&chnl);
-                continue;
-            }
-
             if (!server_hanshake_is_done(chnl))
             {
                 server_try_accepting_handshake(chnl);
@@ -392,9 +379,27 @@ int main(int argc, char **argv)
             // Read and write DTLS application data:
             char buf[2000];
             int n;
-            n = server_get(chnl, buf, sizeof(buf));
-            if (n <= 0)
+            if ((n = server_get(chnl, buf, sizeof(buf))) <= 0)
             {
+                fprintf(stderr, "Info: No more application data packet from peer IP:port = %s\n", sdump_addr(&(chnl->data.txaddr)));
+                int stateflag = SSL_get_shutdown(chnl->ssl);
+                if (stateflag & SSL_RECEIVED_SHUTDOWN)
+                {
+                    int shutdown_status;
+                    shutdown_status = SSL_shutdown(chnl->ssl);
+                    if (1 == shutdown_status)
+                    {
+                        fprintf(stderr, "DEBUG: SSL_shutdown() success.\n");
+                    }
+                    else
+                    {
+                        fprintf(stderr, "DEBUG: LINE=%d\n", __LINE__);
+                        fprintf(stderr, "WARNING: SSL_shutdown() returns 0x%X\n", shutdown_status);
+                    }
+                    ht_delete(ht, peer_addr_buf);
+                    fprintf(stderr, "Info: peer %s has been removed from hash table\n", sdump_addr(&(chnl->data.txaddr)));
+                    server_udp_channel_free(&chnl);
+                }
                 continue;
             }
             if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
