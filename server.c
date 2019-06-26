@@ -358,7 +358,10 @@ int main(int argc, char **argv)
                 server_append_incoming_packet(session, packet);
                 packet = buffer_new(2000);
                 ret = DTLSv1_listen(session->ssl, NULL);
-                if (ret==1) // if the client sents us a "Client Hello" packet with a valid cookie
+                // Note:
+                // DTLSv1_listen() returns 1 only if the client has sent us a "Client Hello" packet with a valid cookie.
+                // If there is no valid cookie in the "Client Hello" packet, DTLSv1_listen() will return 0 instead of 1.
+                if (ret==1)
                 {
                     ht_insert(ht, peer_addr_buf, session);
                     server_try_accepting_handshake(session);
