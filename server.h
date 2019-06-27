@@ -23,5 +23,5 @@ extern void server_try_accepting_handshake(server_session_t *p);
 extern  int server_hanshake_is_done(server_session_t *p);
 
 extern void server_append_incoming_packet(server_session_t *p, buffer_t *packet);
-extern int server_decrypt_incoming_packet(server_session_t *p, void *out_plaintext_buf, size_t out_buf_max_bytes);
-extern void server_encrypt_and_send(server_session_t *p, const void *in_plaintext_buf, size_t buf_size);
+extern int server_decrypt_incoming_packet(server_session_t *p, void *decrypted_plaintext_buf, size_t buf_max_bytes);
+extern void server_encrypt_and_send(server_session_t *p, const void *plaintext_buf, size_t buf_size);

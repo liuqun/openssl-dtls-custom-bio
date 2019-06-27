@@ -77,12 +77,12 @@ void server_append_incoming_packet(server_session_t *p, buffer_t *packet)
     deque_append(&(p->data.rxqueue), packet);
 }
 
-int server_decrypt_incoming_packet(server_session_t *p, void *out_plaintext_buf, size_t out_buf_max_bytes)
+int server_decrypt_incoming_packet(server_session_t *p, void *decrypted_plaintext_buf, size_t buf_max_bytes)
 {
     size_t decrypted=0;
     int ret;
 
-    if ((ret = SSL_read(p->ssl, out_plaintext_buf, out_buf_max_bytes)) < 0)
+    if ((ret = SSL_read(p->ssl, decrypted_plaintext_buf, buf_max_bytes)) < 0)
     {
         int e = SSL_get_error(p->ssl, ret);
         if (SSL_ERROR_SSL == e)
@@ -92,7 +92,7 @@ int server_decrypt_incoming_packet(server_session_t *p, void *out_plaintext_buf,
         }
         return 0; // 失败时: 返回 0 表示失败 (当心: 即使ret<0, 函数server_get()仍返回0)
     }
-    return ret; // 成功时: 返回值大于 0 且小于等于 out_buf_max_bytes, 表示输出数据有效字节数.
+    return ret; // 成功时: 返回值大于 0 且小于等于 buf_max_bytes, 表示输出数据有效字节数.
 }
 
 void server_try_accepting_handshake(server_session_t *p)
@@ -114,7 +114,7 @@ void server_try_accepting_handshake(server_session_t *p)
     return;
 }
 
-void server_encrypt_and_send(server_session_t *p, const void *in_plaintext_block, size_t blocksize)
+void server_encrypt_and_send(server_session_t *p, const void *plaintext_buf, size_t buf_size)
 {
-    SSL_write(p->ssl, in_plaintext_block, (int)blocksize);
+    (void) SSL_write(p->ssl, plaintext_buf, (int)buf_size);
 }
