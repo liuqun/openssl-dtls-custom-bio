@@ -38,20 +38,6 @@ for (int _tmp_index=0; _tmp_index<(htp)->nbucket; ++_tmp_index) \
     for (deque_item_t *_tmp_item=((htp)->bucket[_tmp_index].head); _tmp_item; _tmp_item=_tmp_item->next) \
         for (ht_node_t *(htnp)=(ht_node_t *)_tmp_item->p; htnp; htnp=NULL)
 
-char cookie_str[] = "BISCUIT!";
-
-int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len)
-{
-    memmove(cookie, cookie_str, sizeof(cookie_str)-1);
-    *cookie_len = sizeof(cookie_str)-1;
-
-    return 1;
-}
-
-int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int cookie_len)
-{
-    return sizeof(cookie_str)-1==cookie_len && memcmp(cookie, cookie_str, sizeof(cookie_str)-1)==0;
-}
 
 void signal_handler(int sig)
 {
@@ -77,6 +63,10 @@ char ServerAppHints[] =
     "You may try these commands youself and see how they work.\n"
     "Good luck!\n";
 const int ServerAppHintsLen = sizeof(ServerAppHints) - 1;
+
+
+static int app_generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len);
+static int app_verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int cookie_len);
 
 int main(int argc, char **argv)
 {
@@ -171,8 +161,8 @@ int main(int argc, char **argv)
     fprintf(stderr, "SSL_CTX_set_default_verify_file -> %d\n", ret);
     SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 
-    SSL_CTX_set_cookie_generate_cb(ctx, generate_cookie);
-    SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
+    SSL_CTX_set_cookie_generate_cb(ctx, app_generate_cookie);
+    SSL_CTX_set_cookie_verify_cb(ctx, app_verify_cookie);
 
     int epfd = epoll_create1(EPOLL_CLOEXEC);
     int run = 0;
@@ -546,4 +536,91 @@ int ht_delete(hashtable_t *htp, buffer_t *key)
     }
 
     return 0;
+}
+
+
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+
+#define APP_COOKIE_SECRET_KEY_LENGTH 16
+char app_cookie_secret_key[APP_COOKIE_SECRET_KEY_LENGTH]={0};
+int app_is_cookie_secret_key_initialized = 0;
+
+#define APP_FEATURE_ENABLE_SM3 1
+#if defined(APP_FEATURE_ENABLE_SM3) && defined(OPENSSL_NO_SM3)
+#error "APP_FEATURE_ENABLE_SM3"// You must build customized OpenSSL with SM3 feture enabled!
+#endif
+
+#if defined(APP_FEATURE_ENABLE_SM3) && !defined(OPENSSL_NO_SM3)
+#define app_selected_hash_algorithm EVP_sm3()
+#else
+#define app_selected_hash_algorithm EVP_sha256()
+#endif
+
+int app_generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len)
+{
+    BIO *bio = NULL;
+    custom_bio_data_t *cbiodata = NULL;
+    const unsigned char *src = NULL;
+    int n = 0;
+    unsigned char hmac_result[DTLS1_COOKIE_LENGTH] = {0}; // DTLS1_COOKIE_LENGTH = 256 但 DTLS v1.2 协议 (RFC 6347) 规定 cookie 长度的最大值为 255 字节(即2^8 -1)
+    unsigned int result_len = sizeof(hmac_result);
+
+    if (!app_is_cookie_secret_key_initialized)
+    {
+        if (!RAND_bytes(app_cookie_secret_key, APP_COOKIE_SECRET_KEY_LENGTH))
+        {
+            fprintf(stderr, "ERROR! Can not set random cookie secret key!\n");
+            return 0;
+        }
+	    app_is_cookie_secret_key_initialized = 1;
+	}
+
+    bio = SSL_get_wbio(ssl);
+    cbiodata = BIO_get_data(bio);
+    src = cbiodata->txaddr_buf.buf;
+    n = cbiodata->txaddr_buf.len;
+    result_len = sizeof(hmac_result);
+    HMAC(app_selected_hash_algorithm, app_cookie_secret_key, APP_COOKIE_SECRET_KEY_LENGTH, src, n, hmac_result, &result_len);
+    assert(result_len <= 255);
+    if (result_len > 255)
+    {
+        result_len = 255;
+    }
+    memcpy(cookie, hmac_result, (size_t)result_len);
+    *cookie_len = result_len;
+    return 1;
+}
+
+int app_verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int cookie_len)
+{
+    int is_valid = 0;
+    BIO *bio = NULL;
+    custom_bio_data_t *cbiodata = NULL;
+    const unsigned char *src = NULL;
+    int n = 0;
+    HMAC_CTX *hmac_calc = NULL;
+    unsigned char hmac_result[DTLS1_COOKIE_LENGTH] = {0}; // DTLS1_COOKIE_LENGTH = 256
+    unsigned int result_len = sizeof(hmac_result);
+
+    hmac_calc = HMAC_CTX_new();
+    HMAC_Init_ex(hmac_calc, app_cookie_secret_key, APP_COOKIE_SECRET_KEY_LENGTH, app_selected_hash_algorithm, NULL);
+    if (HMAC_size(hmac_calc) != cookie_len)
+    {
+        is_valid = 0;
+        goto VERIFY_COOKIE_CLEANUP;
+    }
+
+    bio = SSL_get_wbio(ssl);
+    cbiodata = BIO_get_data(bio);
+    src = cbiodata->txaddr_buf.buf;
+    n = cbiodata->txaddr_buf.len;
+    HMAC_Update(hmac_calc, src, n);
+    result_len = sizeof(hmac_result);
+    HMAC_Final(hmac_calc, hmac_result, &result_len);
+    is_valid = (memcmp(cookie, hmac_result, HMAC_size(hmac_calc)) == 0);
+
+VERIFY_COOKIE_CLEANUP:
+    HMAC_CTX_free(hmac_calc);
+    return is_valid;
 }
