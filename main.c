@@ -175,6 +175,25 @@ int main(int argc, char **argv)
 
         epe.data.fd = socket(((struct sockaddr *)bp->buf)->sa_family, SOCK_DGRAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0);
 
+        /* DTLS requires the IP don't fragment (DF) bit to be set */
+        #if defined(__linux__) && defined(IP_MTU_DISCOVER)
+        {
+            int optval = IP_PMTUDISC_DO;
+            setsockopt(epe.data.fd, IPPROTO_IP, IP_MTU_DISCOVER, (const void *) &optval, sizeof(optval));
+            /* 备注:
+            Linux 内核提供了一个禁用IPv4 PMTU Discover特性的开关
+            当/proc目录下的文件 /proc/sys/net/ipv4/ip_no_pmtu_disc 的字符串为"0"时,
+            表示内核允许探测PMTU实际长度
+            */
+        }
+        #endif
+        #if defined(__FreeBSD__) && defined(IP_DONTFRAG)
+        {
+            int optval = 1;
+            setsockopt(epe.data.fd, IPPROTO_IP, IP_DONTFRAG, (const void *) &optval, sizeof(optval));
+        }
+        #endif
+
         fprintf(stderr, "new socket fd: %d\n", epe.data.fd);
         dump_addr((struct sockaddr *)bp->buf, "try bind: ");
         bind_error = bind(epe.data.fd, (struct sockaddr *)bp->buf, (socklen_t)bp->len);
