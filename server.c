@@ -11,18 +11,6 @@
 #include "server.h"
 
 
-char SERVER_HINTS[] =
-    "My server supports the following commands:\n"
-    "  1. ping returns pong\n"
-    "  2. echo <some text> returns <some text>\n"
-    "  3. whoami returns client's address and port seen by server\n"
-    "  4. stats returns a list of server currently serving clients\n"
-    "  5. bc <some text> broadcast <some text> to all clients\n"
-    "You may try these commands youself and see how they work.\n"
-    "Good luck!\n";
-const int SERVER_HINTS_LEN = sizeof(SERVER_HINTS) - 1;
-
-
 int server_hanshake_is_done(server_session_t *p)
 {
     return p->is_handshake_accepted;
@@ -110,7 +98,6 @@ void server_try_accepting_handshake(server_session_t *p)
 
     dump_addr(&p->data.txaddr, "user connected: ");
     p->is_handshake_accepted = 1;
-    server_encrypt_and_send(p, SERVER_HINTS, SERVER_HINTS_LEN);
     return;
 }
 

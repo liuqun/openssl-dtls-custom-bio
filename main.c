@@ -67,6 +67,17 @@ enum
     TIME_OUT = 8000 // ms
 };
 
+char SERVER_HINTS[] =
+    "My server supports the following commands:\n"
+    "  1. ping returns pong\n"
+    "  2. echo <some text> returns <some text>\n"
+    "  3. whoami returns client's address and port seen by server\n"
+    "  4. stats returns a list of server currently serving clients\n"
+    "  5. bc <some text> broadcast <some text> to all clients\n"
+    "You may try these commands youself and see how they work.\n"
+    "Good luck!\n";
+const int SERVER_HINTS_LEN = sizeof(SERVER_HINTS) - 1;
+
 int main(int argc, char **argv)
 {
     int bind_error;
@@ -246,6 +257,10 @@ int main(int argc, char **argv)
                 {
                     ht_insert(ht, peer_addr_buf, session);
                     server_try_accepting_handshake(session);
+                    if (server_hanshake_is_done(session))
+                    {
+                        server_encrypt_and_send(session, SERVER_HINTS, SERVER_HINTS_LEN);
+                    }
                     session = server_session_new(ctx);
                 }
                 continue;
@@ -257,6 +272,10 @@ int main(int argc, char **argv)
             if (!server_hanshake_is_done(existing_sess))
             {
                 server_try_accepting_handshake(existing_sess);
+                if (server_hanshake_is_done(existing_sess))
+                {
+                    server_encrypt_and_send(existing_sess, SERVER_HINTS, SERVER_HINTS_LEN);
+                }
                 continue;
             }
 
@@ -358,6 +377,7 @@ int main(int argc, char **argv)
                 int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
 
                 server_encrypt_and_send(existing_sess, UnknownCmdHint, UnknownCmdHintLen);
+                server_encrypt_and_send(existing_sess, SERVER_HINTS, SERVER_HINTS_LEN);
             }
         }
     }
