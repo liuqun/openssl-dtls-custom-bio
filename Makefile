@@ -1,23 +1,38 @@
-CFLAGS=-g
-LDFLAGS=-lssl -lcrypto
-LIBS=cbio.o util.o
+CC := gcc
+CFLAGS = -g -pthread
+
+OPENSSL_INCLUDE_DIR =
+#OPENSSL_INCLUDE_DIR = openssl-1.1.1c/include
+
+OPENSSL_LIB_DIR =
+#OPENSSL_LIB_DIR = openssl-1.1.1c/lib
+
+OPENSSL_CFLAGS =
+#OPENSSL_CFLAGS = -I$(OPENSSL_INCLUDE_DIR)
+
+OPENSSL_LDFLAGS =
+#OPENSSL_LDFLAGS = -L$(OPENSSL_LIB_DIR)
+
+OPENSSL_LIBS = -lssl -lcrypto
+# OPENSSL_LIBS = $(OPENSSL_LIB_DIR)/libssl.a $(OPENSLL_LIB_DIR)/libcrypto.a
 
 .PHONY: all clean certs delete-certs
 
 all: server client certs
 
-server: server.c $(LIBS)
-	cc -o $@ $^ $(CFLAGS) $(LDFLAGS)
-
-client: client.c $(LIBS)
-	cc -o $@ $^ $(CFLAGS) $(LDFLAGS) -lreadline
+server: server.o main.o cbio.o util.o
+	$(LINK.o) -o $@ $^ -lssl -lcrypto -lpthread
+client: client.o cbio.o util.o
+	$(LINK.o) -o $@ $^ -lssl -lcrypto -lpthread -lreadline
+server client: LDFLAGS+=$(OPENSSL_LDFLAGS)
+server.o main.o client.o cbio.o: CFLAGS+=$(OPENSSL_CFLAGS)
 
 certs: root-key.pem root-ca.pem \
 server-key.pem server-csr.pem server-cert.pem \
 client-key.pem client-csr.pem client-cert.pem
 
 clean: delete-certs
-	rm -f cbio.o util.o server client
+	rm -f *.o server client
 
 delete-certs:
 	rm -f *.pem *.srl
