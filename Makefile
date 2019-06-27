@@ -1,30 +1,20 @@
 CC := gcc
 CFLAGS = -g -pthread
 
-OPENSSL_INCLUDE_DIR =
-#OPENSSL_INCLUDE_DIR = openssl-1.1.1c/include
-
-OPENSSL_LIB_DIR =
-#OPENSSL_LIB_DIR = openssl-1.1.1c/lib
-
-OPENSSL_CFLAGS =
-#OPENSSL_CFLAGS = -I$(OPENSSL_INCLUDE_DIR)
-
-OPENSSL_LDFLAGS =
-#OPENSSL_LDFLAGS = -L$(OPENSSL_LIB_DIR)
-
-OPENSSL_LIBS = -lssl -lcrypto
-# OPENSSL_LIBS = $(OPENSSL_LIB_DIR)/libssl.a $(OPENSLL_LIB_DIR)/libcrypto.a
+OPENSSL_INCLUDE_DIR = openssl-1.1.1c/include
+OPENSSL_LIB_DIR = openssl-1.1.1c/lib
+OPENSSL_CFLAGS = -I$(OPENSSL_INCLUDE_DIR)
+OPENSSL_STATIC_LIBS = $(OPENSSL_LIB_DIR)/libssl.a $(OPENSLL_LIB_DIR)/libcrypto.a
+OPENSSL_SHARED_LIBS = $(OPENSSL_LIB_DIR)/libssl.so $(OPENSLL_LIB_DIR)/libcrypto.so
 
 .PHONY: all clean certs delete-certs
 
 all: server client certs
 
 server: server.o main.o cbio.o util.o
-	$(LINK.o) -o $@ $^ -lssl -lcrypto -lpthread
+	$(LINK.o) -o $@ $^ $(OPENSSL_STATIC_LIBS) -lpthread
 client: client.o cbio.o util.o
-	$(LINK.o) -o $@ $^ -lssl -lcrypto -lpthread -lreadline
-server client: LDFLAGS+=$(OPENSSL_LDFLAGS)
+	$(LINK.o) -o $@ $^ $(OPENSSL_STATIC_LIBS) -lpthread -lreadline
 server.o main.o client.o cbio.o: CFLAGS+=$(OPENSSL_CFLAGS)
 
 certs: root-key.pem root-ca.pem \
