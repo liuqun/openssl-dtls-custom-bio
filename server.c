@@ -117,7 +117,7 @@ void server_append_incoming_packet(server_session_t *p, buffer_t *packet)
     deque_append(&(p->data.rxqueue), packet);
 }
 
-int server_decrypt_incomming_packet(server_session_t *p, void *out_plaintext_buf, size_t out_buf_max_bytes)
+int server_decrypt_incoming_packet(server_session_t *p, void *out_plaintext_buf, size_t out_buf_max_bytes)
 {
     size_t decrypted=0;
     int ret;
@@ -406,7 +406,7 @@ int main(int argc, char **argv)
             // Read and write DTLS application data:
             char buf[2000];
             int n;
-            if ((n = server_decrypt_incomming_packet(existing_sess, buf, sizeof(buf))) <= 0)
+            if ((n = server_decrypt_incoming_packet(existing_sess, buf, sizeof(buf))) <= 0)
             {
                 fprintf(stderr, "Info: No more application data packet from peer IP:port = %s\n", sdump_addr(&(existing_sess->data.txaddr)));
                 int stateflag = SSL_get_shutdown(existing_sess->ssl);
