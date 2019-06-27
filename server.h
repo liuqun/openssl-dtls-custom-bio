@@ -8,18 +8,12 @@
 
 typedef struct _server_session_t server_session_t;
 
-typedef void (*session_callback_fn_t)(server_session_t *session, void *extra_arg);
-
 struct _server_session_t
 {
     custom_bio_data_t data;
     SSL *ssl;
 
     int is_handshake_accepted;
-    struct {
-        session_callback_fn_t on_handshake_accepted_cb;
-        void *on_handshake_accepted_extra_arg;
-    };
 };
 
 extern server_session_t * server_session_new(SSL_CTX *ctx);

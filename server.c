@@ -28,20 +28,6 @@ int server_hanshake_is_done(server_session_t *p)
     return p->is_handshake_accepted;
 }
 
-void server_send_greetings_to_client(server_session_t *p, void *extra_greeting_arg)
-{
-    const char *DefaultGreetingMsg = "(Server greeting message is empty by default...)\n";
-    const char *msg = (const char *)extra_greeting_arg;
-    size_t n=0;
-
-    if (!msg || (n=strlen(msg)) <= 0)
-    {
-        n = strlen(DefaultGreetingMsg);
-        msg = DefaultGreetingMsg;
-    }
-    SSL_write(p->ssl, msg, n);
-}
-
 server_session_t * server_session_new(SSL_CTX *ctx)
 {
     BIO *bio = NULL;
@@ -59,10 +45,6 @@ server_session_t * server_session_new(SSL_CTX *ctx)
     BIO_set_init(bio, 1);
     p->ssl = SSL_new(ctx);
     SSL_set_bio(p->ssl, bio, bio);
-
-    p->is_handshake_accepted = 0;
-    p->on_handshake_accepted_cb = server_send_greetings_to_client;
-    p->on_handshake_accepted_extra_arg = SERVER_HINTS;
 
     return p;
 }
@@ -128,10 +110,7 @@ void server_try_accepting_handshake(server_session_t *p)
 
     dump_addr(&p->data.txaddr, "user connected: ");
     p->is_handshake_accepted = 1;
-    if (p->on_handshake_accepted_cb)
-    {
-        p->on_handshake_accepted_cb(p, p->on_handshake_accepted_extra_arg);
-    }
+    server_encrypt_and_send(p, SERVER_HINTS, SERVER_HINTS_LEN);
     return;
 }
 
