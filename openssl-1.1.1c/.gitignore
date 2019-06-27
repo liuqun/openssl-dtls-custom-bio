@@ -1,0 +1,7 @@
+# Source build directory
+build
+# Local install directory
+bin
+include
+lib
+share
