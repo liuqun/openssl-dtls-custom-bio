@@ -67,7 +67,7 @@ enum
     TIME_OUT = 8000 // ms
 };
 
-char SERVER_HINTS[] =
+char ServerAppHints[] =
     "My server supports the following commands:\n"
     "  1. ping returns pong\n"
     "  2. echo <some text> returns <some text>\n"
@@ -76,7 +76,7 @@ char SERVER_HINTS[] =
     "  5. bc <some text> broadcast <some text> to all clients\n"
     "You may try these commands youself and see how they work.\n"
     "Good luck!\n";
-const int SERVER_HINTS_LEN = sizeof(SERVER_HINTS) - 1;
+const int ServerAppHintsLen = sizeof(ServerAppHints) - 1;
 
 int main(int argc, char **argv)
 {
@@ -259,7 +259,7 @@ int main(int argc, char **argv)
                     server_try_accepting_handshake(session);
                     if (server_hanshake_is_done(session))
                     {
-                        server_encrypt_and_send(session, SERVER_HINTS, SERVER_HINTS_LEN);
+                        server_encrypt_and_send(session, ServerAppHints, ServerAppHintsLen);
                     }
                     session = server_session_new(ctx);
                 }
@@ -274,7 +274,7 @@ int main(int argc, char **argv)
                 server_try_accepting_handshake(existing_sess);
                 if (server_hanshake_is_done(existing_sess))
                 {
-                    server_encrypt_and_send(existing_sess, SERVER_HINTS, SERVER_HINTS_LEN);
+                    server_encrypt_and_send(existing_sess, ServerAppHints, ServerAppHintsLen);
                 }
                 continue;
             }
@@ -377,7 +377,7 @@ int main(int argc, char **argv)
                 int UnknownCmdHintLen = sizeof(UnknownCmdHint) - 1;
 
                 server_encrypt_and_send(existing_sess, UnknownCmdHint, UnknownCmdHintLen);
-                server_encrypt_and_send(existing_sess, SERVER_HINTS, SERVER_HINTS_LEN);
+                server_encrypt_and_send(existing_sess, ServerAppHints, ServerAppHintsLen);
             }
         }
     }
