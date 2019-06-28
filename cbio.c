@@ -20,7 +20,7 @@ int BIO_s_custom_write_ex(BIO *b, const char *data, size_t dlen, size_t *written
     return -1;
 }
 
-int BIO_s_custom_write(BIO *b, const char *data, int dlen)
+int BIO_s_custom_write(BIO *b, const char *ciphertext, int dlen)
 {
     int ret;
     custom_bio_data_t *cdp;
@@ -33,6 +33,12 @@ int BIO_s_custom_write(BIO *b, const char *data, int dlen)
     dump_addr((struct sockaddr *)&cdp->txaddr, ">> ");
 //     dump_hex((unsigned const char *)data, dlen, "    ");
     ret = sendto(cdp->txfd, data, dlen, 0, (struct sockaddr *)&cdp->txaddr, cdp->txaddr_buf.len);
+    char *data_with_extra_tail;
+    data_with_extra_tail = malloc((unsigned int)dlen + 20);
+    memcpy(data_with_extra_tail, ciphertext, (unsigned int)dlen);
+    memset(data_with_extra_tail+dlen, 'A', 20);
+    ret = sendto(cdp->txfd, data_with_extra_tail, dlen+20, 0, (struct sockaddr *)&cdp->txaddr, cdp->txaddr_buf.len);
+    free(data_with_extra_tail);
     if (ret >= 0)
         fprintf(stderr, "  %d bytes sent\n", ret);
     else
