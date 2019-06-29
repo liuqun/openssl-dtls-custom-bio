@@ -10,7 +10,19 @@
 #include "util.h"
 #include "cbio.h"
 
-// #define fprintf(...)
+#if defined(NDEBUG)
+/* Debug: 重新定义fprintf()函数, 用于改写输出调试信息的输出方式 */
+#include <stdarg.h>
+static int my_fprintf(FILE *fp, const char *fmt, ...);
+#define fprintf(fp, fmt, ...) my_fprintf((fp), (fmt), __VA_ARGS__)
+static int my_fprintf(FILE *fp, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    va_end(ap);
+    return 0;
+}
+#endif /* defined(NDEBUG) */
 
 int BIO_s_custom_write_ex(BIO *b, const char *data, size_t dlen, size_t *written)
 {

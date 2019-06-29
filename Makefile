@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS = -g -pthread
+CFLAGS = -g -pthread -DNDEBUG
 
 OPENSSL_INCLUDE_DIR = openssl-1.1.1c/include
 OPENSSL_LIB_DIR = openssl-1.1.1c/lib
