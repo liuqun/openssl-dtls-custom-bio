@@ -11,6 +11,7 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/rand.h>
 
 #include <readline/readline.h>
 
@@ -160,6 +161,16 @@ int main(int argc, char **argv)
     assert(sockfd);
     deque_init(&cbio_data.rxqueue);
     cbio_data.peekmode = 0;
+    if (1) // FIXME: 正式版本必须改成由 SDP Controller 统一下发 SDP 会话 ID. 下列代码中填写的是随机数, 临时代表假的 SDP 会话 ID
+    {
+        RAND_bytes(cbio_data.sdp_id, SDP_ID_MAX_BYTES);
+        cbio_data.sdp_id[0] = '{';
+        cbio_data.sdp_id[1] = '{';
+        cbio_data.sdp_id[14] = '}';
+        cbio_data.sdp_id[15] = '}';
+        cbio_data.head.cap = SDP_ID_MAX_BYTES;
+        cbio_data.head.len = cbio_data.head.cap;
+    }
 
     int epfd = epoll_create1(EPOLL_CLOEXEC);
     struct epoll_event epe = {0};

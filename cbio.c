@@ -32,7 +32,11 @@ int BIO_s_custom_write(BIO *b, const char *data, int dlen)
 
     dump_addr((struct sockaddr *)&cdp->txaddr, ">> ");
 //     dump_hex((unsigned const char *)data, dlen, "    ");
-    ret = sendto(cdp->txfd, data, dlen, 0, (struct sockaddr *)&cdp->txaddr, cdp->txaddr_buf.len);
+    char totalbuf[2000]={0}; // const size_t Max = sizeof(totalbuf);
+    memcpy(totalbuf, cdp->sdp_id, SDP_ID_MAX_BYTES);
+    memcpy(totalbuf + SDP_ID_MAX_BYTES, data, dlen);
+    int totallen = dlen + SDP_ID_MAX_BYTES;
+    ret = sendto(cdp->txfd, totalbuf, totallen, 0, (struct sockaddr *)&cdp->txaddr, cdp->txaddr_buf.len);
     if (ret >= 0)
         fprintf(stderr, "  %d bytes sent\n", ret);
     else
@@ -51,12 +55,11 @@ int BIO_s_custom_read_ex(BIO *b, char *data, size_t dlen, size_t *readbytes)
 
 int BIO_s_custom_read(BIO *b, char *data, int dlen)
 {
-    int ret;
+    int len = -1;
     custom_bio_data_t *cdp;
     deque_t *dp;
     buffer_t *bp;
 
-    ret = -1;
     fprintf(stderr, "BIO_s_custom_read(BIO[0x%016lX], data[0x%016lX], dlen[%ld])\n", b, data, dlen);
     fprintf(stderr, "  probe peekmode %d\n",
             ((custom_bio_data_t *)BIO_get_data(b))->peekmode);
@@ -65,7 +68,11 @@ int BIO_s_custom_read(BIO *b, char *data, int dlen)
     cdp = (custom_bio_data_t *)BIO_get_data(b);
     dp = &cdp->rxqueue;
     fprintf(stderr, "  data[0x%016lX] queue: %d\n", dp, deque_count(dp));
-    if (dp->head)
+    if (!dp->head)
+    {
+        return -1;
+    }
+    else
     {
         if (((custom_bio_data_t *)BIO_get_data(b))->peekmode)
             bp = (buffer_t *)deque_peekleft(dp);
@@ -74,14 +81,16 @@ int BIO_s_custom_read(BIO *b, char *data, int dlen)
         fprintf(stderr, "  buf[0x%016lX]\n", bp);
         fflush(stderr);
 
-        ret = (bp->len<=dlen) ? bp->len : dlen;
-        memmove(data, bp->buf, ret);
+        len = (bp->len<=dlen) ? bp->len : dlen;
+        /* 去掉 SDP 层报头占用的 16 字节, 得到 DTLS 层实际长度 len */
+        len -= SDP_ID_MAX_BYTES;
+        memcpy(data, bp->buf+SDP_ID_MAX_BYTES, len);
 
         if (!((custom_bio_data_t *)BIO_get_data(b))->peekmode)
             buffer_free(bp);
     }
 
-    return ret;
+    return len;
 }
 
 int BIO_s_custom_gets(BIO *b, char *data, int size);
@@ -122,7 +131,7 @@ long BIO_s_custom_ctrl(BIO *b, int cmd, long larg, void *pargs)
             break;
         case BIO_CTRL_DGRAM_QUERY_MTU: // 40
         case BIO_CTRL_DGRAM_GET_FALLBACK_MTU: // 47
-            ret = 1500;
+            ret = 1400;
 //             ret = 9000; // jumbo?
             break;
         case BIO_CTRL_DGRAM_GET_MTU_OVERHEAD: // 49

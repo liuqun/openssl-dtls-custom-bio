@@ -241,7 +241,6 @@ int main(int argc, char **argv)
 
         while (1)
         {
-            buffer_t *peer_addr_buf;
             socklen_t peer_addr_len;
 
             peer_addr_len = (socklen_t) session->data.txaddr_buf.cap;
@@ -250,9 +249,16 @@ int main(int argc, char **argv)
             {
                 break;
             }
-            peer_addr_buf = &(session->data.txaddr_buf);
-            peer_addr_buf->len = (int) peer_addr_len;
-            server_session_t *existing_sess = (server_session_t *) ht_search(ht, peer_addr_buf);
+            session->data.txaddr_buf.len = peer_addr_len;
+
+            if (packet->len < SDP_ID_MAX_BYTES)
+            {
+                break;
+            }
+            memcpy(session->data.sdp_id, packet->buf, SDP_ID_MAX_BYTES);
+            buffer_t *id = &(session->data.head);
+            id->len = id->cap = SDP_ID_MAX_BYTES;
+            server_session_t *existing_sess = (server_session_t *) ht_search(ht, id);
             if (!existing_sess)
             {
                 session->data.txfd = epe.data.fd;
@@ -264,7 +270,7 @@ int main(int argc, char **argv)
                 // If there is no valid cookie in the "Client Hello" packet, DTLSv1_listen() will return 0 instead of 1.
                 if (ret==1)
                 {
-                    ht_insert(ht, peer_addr_buf, session);
+                    ht_insert(ht, id, session);
                     server_try_accepting_handshake(session);
                     if (server_hanshake_is_done(session))
                     {
@@ -308,7 +314,7 @@ int main(int argc, char **argv)
                         fprintf(stderr, "DEBUG: LINE=%d\n", __LINE__);
                         fprintf(stderr, "WARNING: SSL_shutdown() returns 0x%X\n", shutdown_status);
                     }
-                    ht_delete(ht, peer_addr_buf);
+                    ht_delete(ht, id);
                     fprintf(stderr, "Info: peer %s has been removed from hash table\n", sdump_addr(&(existing_sess->data.txaddr)));
                     server_session_free(&existing_sess);
                 }

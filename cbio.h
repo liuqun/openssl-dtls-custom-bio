@@ -1,7 +1,10 @@
 #ifndef CBIO_H
 #define CBIO_H
 
+#define SDP_ID_MAX_BYTES 16 // 定义SDP中间层的字节数
 typedef struct custom_bio_data_st {
+    buffer_t head;
+    char sdp_id[SDP_ID_MAX_BYTES];
     buffer_t txaddr_buf;
     union {
         struct sockaddr_storage txaddr_storage;

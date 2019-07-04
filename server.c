@@ -28,6 +28,10 @@ server_session_t * server_session_new(SSL_CTX *ctx)
     deque_init(&(p->data.rxqueue));
     p->data.peekmode = 0;
 
+    memset(p->data.sdp_id, 0x00, SDP_ID_MAX_BYTES);
+    p->data.head.cap = SDP_ID_MAX_BYTES;
+    p->data.head.len = 0;
+
     bio = BIO_new(BIO_s_custom());
     BIO_set_data(bio, (void *)&p->data);
     BIO_set_init(bio, 1);
