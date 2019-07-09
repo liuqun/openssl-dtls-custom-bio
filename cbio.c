@@ -14,7 +14,11 @@
 
 int BIO_s_custom_write_ex(BIO *b, const char *data, size_t dlen, size_t *written)
 {
-    fprintf(stderr, "BIO_s_custom_write_ex(BIO[0x%016lX], data[0x%016lX], dlen[%ld], *written[%ld])\n", b, data, dlen, *written);
+    (void) b;
+    (void) data;
+    (void) dlen;
+    (void) written;
+    fprintf(stderr, "BIO_s_custom_write_ex(BIO[0x%p], data[0x%p], dlen[%ld], *written[%ld])\n", (void*)b, (const void*)data, dlen, *written);
     fflush(stderr);
 
     return -1;
@@ -22,11 +26,12 @@ int BIO_s_custom_write_ex(BIO *b, const char *data, size_t dlen, size_t *written
 
 int BIO_s_custom_write(BIO *b, const char *data, int dlen)
 {
+    (void) b;
     int ret;
     custom_bio_data_t *cdp;
 
     ret = -1;
-    fprintf(stderr, "BIO_s_custom_write(BIO[0x%016lX], buf[0x%016lX], dlen[%ld])\n", b, data, dlen);
+    fprintf(stderr, "BIO_s_custom_write(BIO[0x%p], buf[0x%p], dlen[%d])\n", (void *)b, (const void *)data, dlen);
     fflush(stderr);
     cdp = (custom_bio_data_t *)BIO_get_data(b);
 
@@ -34,9 +39,9 @@ int BIO_s_custom_write(BIO *b, const char *data, int dlen)
 //     dump_hex((unsigned const char *)data, dlen, "    ");
     char totalbuf[2000]={0}; // const size_t Max = sizeof(totalbuf);
     memcpy(totalbuf, cdp->sdp_id, SDP_ID_MAX_BYTES);
-    memcpy(totalbuf + SDP_ID_MAX_BYTES, data, dlen);
+    memcpy(totalbuf + SDP_ID_MAX_BYTES, data, (size_t)dlen);
     int totallen = dlen + SDP_ID_MAX_BYTES;
-    ret = sendto(cdp->txfd, totalbuf, totallen, 0, (struct sockaddr *)&cdp->txaddr, cdp->txaddr_buf.len);
+    ret = (int) sendto(cdp->txfd, totalbuf, (size_t)totallen, 0, (struct sockaddr *)&cdp->txaddr, (socklen_t)cdp->txaddr_buf.len);
     if (ret >= 0)
         fprintf(stderr, "  %d bytes sent\n", ret);
     else
@@ -47,7 +52,11 @@ int BIO_s_custom_write(BIO *b, const char *data, int dlen)
 
 int BIO_s_custom_read_ex(BIO *b, char *data, size_t dlen, size_t *readbytes)
 {
-    fprintf(stderr, "BIO_s_custom_read_ex(BIO[0x%016lX], data[0x%016lX], dlen[%ld], *readbytes[%ld])\n", b, data, dlen, *readbytes);
+    (void) b;
+    (void) data;
+    (void) dlen;
+    (void) readbytes;
+    fprintf(stderr, "BIO_s_custom_read_ex(BIO[0x%p], data[0x%p], dlen[%ld], *readbytes[%ld])\n", (void *)b, (const void *)data, dlen, *readbytes);
     fflush(stderr);
 
     return -1;
@@ -55,19 +64,20 @@ int BIO_s_custom_read_ex(BIO *b, char *data, size_t dlen, size_t *readbytes)
 
 int BIO_s_custom_read(BIO *b, char *data, int dlen)
 {
+    (void) b;
     int len = -1;
     custom_bio_data_t *cdp;
     deque_t *dp;
     buffer_t *bp;
 
-    fprintf(stderr, "BIO_s_custom_read(BIO[0x%016lX], data[0x%016lX], dlen[%ld])\n", b, data, dlen);
+    fprintf(stderr, "BIO_s_custom_read(BIO[0x%p], data[0x%p], dlen[%d])\n", (void *)b, (const void *)data, dlen);
     fprintf(stderr, "  probe peekmode %d\n",
             ((custom_bio_data_t *)BIO_get_data(b))->peekmode);
     fflush(stderr);
 
     cdp = (custom_bio_data_t *)BIO_get_data(b);
     dp = &cdp->rxqueue;
-    fprintf(stderr, "  data[0x%016lX] queue: %d\n", dp, deque_count(dp));
+    fprintf(stderr, "  data[0x%p] queue: %d\n", (void *)dp, (int)deque_count(dp));
     if (!dp->head)
     {
         return -1;
@@ -78,13 +88,13 @@ int BIO_s_custom_read(BIO *b, char *data, int dlen)
             bp = (buffer_t *)deque_peekleft(dp);
         else
             bp = (buffer_t *)deque_popleft(dp);
-        fprintf(stderr, "  buf[0x%016lX]\n", bp);
+        fprintf(stderr, "  buf[0x%p]\n", (void *)bp);
         fflush(stderr);
 
         len = (bp->len<=dlen) ? bp->len : dlen;
         /* 去掉 SDP 层报头占用的 16 字节, 得到 DTLS 层实际长度 len */
         len -= SDP_ID_MAX_BYTES;
-        memcpy(data, bp->buf+SDP_ID_MAX_BYTES, len);
+        memcpy(data, bp->buf+SDP_ID_MAX_BYTES, (size_t)len);
 
         if (!((custom_bio_data_t *)BIO_get_data(b))->peekmode)
             buffer_free(bp);
@@ -113,6 +123,8 @@ int BIO_s_custom_puts(BIO *b, const char *data);
 
 long BIO_s_custom_ctrl(BIO *b, int cmd, long larg, void *pargs)
 {
+    (void) b;
+    (void) pargs;
     long ret = 0;
 
 //     fprintf(stderr, "BIO_s_custom_ctrl(BIO[0x%016lX], cmd[%d], larg[%ld], pargs[0x%016lX])\n", b, cmd, larg, pargs);
@@ -163,7 +175,7 @@ long BIO_s_custom_ctrl(BIO *b, int cmd, long larg, void *pargs)
             ret = 0;
             break;
         default:
-            fprintf(stderr, "BIO_s_custom_ctrl(BIO[0x%016lX], cmd[%d], larg[%ld], pargs[0x%016lX])\n", b, cmd, larg, pargs);
+            fprintf(stderr, "BIO_s_custom_ctrl(BIO[0x%p], cmd[%d], larg[%ld], pargs[0x%p])\n", (void *)b, cmd, larg, pargs);
             fprintf(stderr, "  unknown cmd: %d\n", cmd);
             fflush(stderr);
             ret = 0;
@@ -176,7 +188,8 @@ long BIO_s_custom_ctrl(BIO *b, int cmd, long larg, void *pargs)
 
 int BIO_s_custom_create(BIO *b)
 {
-    fprintf(stderr, "BIO_s_custom_create(BIO[0x%016lX])\n", b);
+    (void) b;
+    fprintf(stderr, "BIO_s_custom_create(BIO[0x%p])\n", (void *)b);
     fflush(stderr);
 
     return 1;
@@ -184,7 +197,8 @@ int BIO_s_custom_create(BIO *b)
 
 int BIO_s_custom_destroy(BIO *b)
 {
-    fprintf(stderr, "BIO_s_custom_destroy(BIO[0x%016lX])\n", b);
+    (void) b;
+    fprintf(stderr, "BIO_s_custom_destroy(BIO[0x%p])\n", (void *)b);
     fflush(stderr);
 
     return 1;
