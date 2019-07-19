@@ -13,6 +13,7 @@
 
 #include "util.h"
 #include "server.h"
+#include "xsock.h"
 
 
 typedef struct hashtable_s {
@@ -244,20 +245,16 @@ int main(int argc, char **argv)
             socklen_t peer_addr_len;
 
             peer_addr_len = (socklen_t) session->data.txaddr_buf.cap;
-            packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, &(session->data.txaddr), &peer_addr_len);
+            xsock_t *xsock = &(session->data.xsock);
+            packet->len = xsock_recvfrom(xsock, epe.data.fd, packet->buf, packet->cap, 0, &(session->data.txaddr), &peer_addr_len);
             if (packet->len < 0)
             {
                 break;
             }
             session->data.txaddr_buf.len = peer_addr_len;
 
-            if (packet->len < SDP_ID_MAX_BYTES)
-            {
-                break;
-            }
-            memcpy(session->data.sdp_id, packet->buf, SDP_ID_MAX_BYTES);
             buffer_t *id = &(session->data.head);
-            id->len = id->cap = SDP_ID_MAX_BYTES;
+            id->len = id->cap = XFS_XUDP_LAYER_HEADER_LENGTH;
             server_session_t *existing_sess = (server_session_t *) ht_search(ht, id);
             if (!existing_sess)
             {

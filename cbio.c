@@ -9,6 +9,7 @@
 
 #include "util.h"
 #include "cbio.h"
+#include "xsock.h"
 
 // #define fprintf(...)
 
@@ -37,11 +38,8 @@ int BIO_s_custom_write(BIO *b, const char *data, int dlen)
 
     dump_addr((struct sockaddr *)&cdp->txaddr, ">> ");
 //     dump_hex((unsigned const char *)data, dlen, "    ");
-    char totalbuf[2000]={0}; // const size_t Max = sizeof(totalbuf);
-    memcpy(totalbuf, cdp->sdp_id, SDP_ID_MAX_BYTES);
-    memcpy(totalbuf + SDP_ID_MAX_BYTES, data, (size_t)dlen);
-    int totallen = dlen + SDP_ID_MAX_BYTES;
-    ret = (int) sendto(cdp->txfd, totalbuf, (size_t)totallen, 0, (struct sockaddr *)&cdp->txaddr, (socklen_t)cdp->txaddr_buf.len);
+    xsock_t *xsock = &(cdp->xsock);
+    ret = (int) xsock_sendto(xsock, cdp->txfd, data, (size_t)dlen, 0, (struct sockaddr *)&cdp->txaddr, (socklen_t)cdp->txaddr_buf.len);
     if (ret >= 0)
         fprintf(stderr, "  %d bytes sent\n", ret);
     else
@@ -92,9 +90,7 @@ int BIO_s_custom_read(BIO *b, char *data, int dlen)
         fflush(stderr);
 
         len = (bp->len<=dlen) ? bp->len : dlen;
-        /* 去掉 SDP 层报头占用的 16 字节, 得到 DTLS 层实际长度 len */
-        len -= SDP_ID_MAX_BYTES;
-        memcpy(data, bp->buf+SDP_ID_MAX_BYTES, (size_t)len);
+        memcpy(data, bp->buf, (size_t)len);
 
         if (!((custom_bio_data_t *)BIO_get_data(b))->peekmode)
             buffer_free(bp);

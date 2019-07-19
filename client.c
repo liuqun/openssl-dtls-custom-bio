@@ -70,6 +70,7 @@ int main(int argc, char **argv)
     }
 
     custom_bio_data_t cbio_data;
+    xsock_t *xsock = &(cbio_data.xsock);
     char *c;
     int port;
 
@@ -163,12 +164,19 @@ int main(int argc, char **argv)
     cbio_data.peekmode = 0;
     if (1) // FIXME: 正式版本必须改成由 SDP Controller 统一下发 SDP 会话 ID. 下列代码中填写的是随机数, 临时代表假的 SDP 会话 ID
     {
-        RAND_bytes(cbio_data.sdp_id, SDP_ID_MAX_BYTES);
-        cbio_data.sdp_id[0] = '{';
-        cbio_data.sdp_id[1] = '{';
-        cbio_data.sdp_id[14] = '}';
-        cbio_data.sdp_id[15] = '}';
-        cbio_data.head.cap = SDP_ID_MAX_BYTES;
+        char src_host_id[20]={0};// 20==XFS_HOST_ID_SIZE
+        char dst_host_id[20]={0};
+
+        RAND_bytes(src_host_id, sizeof(src_host_id));
+        src_host_id[0] = '{';
+        src_host_id[1] = '{';
+        src_host_id[18] = '}';
+        src_host_id[19] = '}';
+        memset(dst_host_id, 0xFF, sizeof(dst_host_id));//FIXME: 此处无法确定目标主机ID, 简单的填写20字节全0xFF
+
+        xsock_set_src_host_id(xsock, src_host_id);
+        xsock_set_dst_host_id(xsock, dst_host_id);
+        cbio_data.head.cap = XFS_XUDP_LAYER_HEADER_LENGTH;
         cbio_data.head.len = cbio_data.head.cap;
     }
 
@@ -244,7 +252,7 @@ int main(int argc, char **argv)
             rl_callback_read_char();
         if (epe.data.fd==sockfd)
         {
-            while ((packet->len=recv(sockfd, packet->buf, packet->cap, 0))>=0)
+            while ((packet->len=xsock_recv(xsock, epe.data.fd, packet->buf, packet->cap, 0))>=0)
             {
                 fprintf(stderr, "\033[2K\r<< %d bytes\n", packet->len);
 

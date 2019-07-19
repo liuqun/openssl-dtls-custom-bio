@@ -11,9 +11,9 @@ OPENSSL_SHARED_LIBS = $(OPENSSL_LIB_DIR)/libssl.so $(OPENSSL_LIB_DIR)/libcrypto.
 
 all: server client certs
 
-server: server.o main.o cbio.o util.o
+server: server.o main.o cbio.o util.o xsock.o
 	$(LINK.o) -o $@ $^ $(OPENSSL_STATIC_LIBS) -lpthread -ldl
-client: client.o cbio.o util.o
+client: client.o cbio.o util.o xsock.o
 	$(LINK.o) -o $@ $^ $(OPENSSL_STATIC_LIBS) -lpthread -ldl -lreadline
 server.o main.o client.o cbio.o: CFLAGS+=$(OPENSSL_CFLAGS)
 

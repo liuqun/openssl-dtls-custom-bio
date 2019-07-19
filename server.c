@@ -9,6 +9,7 @@
 #include "util.h"
 #include "cbio.h"
 #include "server.h"
+#include "xsock.h"
 
 
 int server_hanshake_is_done(server_session_t *p)
@@ -28,9 +29,10 @@ server_session_t * server_session_new(SSL_CTX *ctx)
     deque_init(&(p->data.rxqueue));
     p->data.peekmode = 0;
 
-    memset(p->data.sdp_id, 0x00, SDP_ID_MAX_BYTES);
-    p->data.head.cap = SDP_ID_MAX_BYTES;
-    p->data.head.len = 0;
+    xsock_t *xsock = &(p->data.xsock);
+    xsock_erase_host_ids(xsock);
+    p->data.head.cap = XFS_XUDP_LAYER_HEADER_LENGTH;
+    p->data.head.len = p->data.head.cap;
 
     bio = BIO_new(BIO_s_custom());
     BIO_set_data(bio, (void *)&p->data);
