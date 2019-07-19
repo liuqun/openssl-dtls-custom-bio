@@ -4,7 +4,7 @@
 #include "xsock.h"
 
 /* 函数 xsock_recvfrom(): 按照新范式报文格式定义, 检查40字节主机ID编码 */
-ssize_t xsock_recvfrom(xsock_t *thiz, unsigned char data[], size_t maxdatalen,
+ssize_t xsock_recvfrom(xsock_t *thiz, int sockfd, unsigned char data[], size_t maxdatalen,
         int sockflags, struct sockaddr *remote_addr, socklen_t *addrlen)
 {
     char incoming_bytes[3000]; //此处写死最大允许收包的字节数
@@ -12,7 +12,7 @@ ssize_t xsock_recvfrom(xsock_t *thiz, unsigned char data[], size_t maxdatalen,
     ssize_t total_received;
 
     memset(incoming_bytes, 0x55, MAX_BYTES);
-    total_received = recvfrom(thiz->sockfd, incoming_bytes, MAX_BYTES, sockflags,
+    total_received = recvfrom(sockfd, incoming_bytes, MAX_BYTES, sockflags,
             remote_addr, addrlen);
     if (total_received < 40) {
         return -1; // 发现收到的UDP数据不足 40 字节, 则返回错误码 -1
@@ -28,7 +28,7 @@ ssize_t xsock_recvfrom(xsock_t *thiz, unsigned char data[], size_t maxdatalen,
 }
 
 /* 函数 xsock_sendto(): 按照新范式报文格式定义, 对所有数据包插入40字节主机ID编码 */
-ssize_t xsock_sendto(xsock_t *thiz, const void *data, size_t dlen, int sockflags,
+ssize_t xsock_sendto(xsock_t *thiz, int sockfd, const void *data, size_t dlen, int sockflags,
         const struct sockaddr *remote_addr, socklen_t addrlen)
 {
     char outgoing[1472]; //此处写死最大允许发包的字节数(1472=1500-20-8)
@@ -41,7 +41,7 @@ ssize_t xsock_sendto(xsock_t *thiz, const void *data, size_t dlen, int sockflags
         dlen = remain;
     }
     memcpy(outgoing + 40, data, dlen);
-    return sendto(thiz->sockfd, outgoing, dlen + 40, sockflags, remote_addr, addrlen) - 40;
+    return sendto(sockfd, outgoing, dlen + 40, sockflags, remote_addr, addrlen) - 40;
 }
 
 /* 设置源主机ID */
@@ -61,10 +61,4 @@ void xsock_erase_host_ids(xsock_t *thiz)
 {
     memset(thiz->src_host_id, 0x00, XFS_HOST_ID_SIZE);
     memset(thiz->dst_host_id, 0x00, XFS_HOST_ID_SIZE);
-}
-
-/* 设置底层 socket fd */
-void xsock_set_sockfd(xsock_t *thiz, int sockfd)
-{
-    thiz->sockfd = sockfd;
 }
