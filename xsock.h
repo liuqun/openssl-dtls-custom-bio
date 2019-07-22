@@ -1,7 +1,6 @@
 #ifndef XSOCK_H_
 #define XSOCK_H_
 
-#include <string.h> // memcpy(), memset()
 #include <sys/socket.h> // sockaddr
 
 #ifdef __cplusplus
