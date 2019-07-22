@@ -41,7 +41,7 @@ ssize_t xsock_sendto(xsock_t *thiz, const void *data, size_t dlen, int sockflags
         dlen = remain;
     }
     memcpy(outgoing + 40, data, dlen);
-    return sendto(thiz->sockfd, outgoing, dlen + 40, sockflags, remote_addr, addrlen);
+    return sendto(thiz->sockfd, outgoing, dlen + 40, sockflags, remote_addr, addrlen) - 40;
 }
 
 /* 设置源主机ID */
