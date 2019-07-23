@@ -56,7 +56,7 @@ void on_connect(client_t *cli)
         dump_addr((struct sockaddr *)&cli->data.txaddr, "ssl error: ");
         ERR_print_errors_fp(stderr);
 
-        assert(ht_delete(ht, &cli->data.txaddr_buf));
+        ht_delete(ht, &cli->data.bufhead);
         SSL_free(cli->ssl);
         free(cli);
     }
@@ -80,7 +80,7 @@ void on_message(client_t *cli)
     {
         SSL_shutdown(cli->ssl);
         dump_addr((struct sockaddr *)&cli->data.txaddr, "|| ");
-        assert(ht_delete(ht, &cli->data.txaddr_buf));
+        ht_delete(ht, &cli->data.bufhead);
         SSL_free(cli->ssl);
         free(cli);
     }
@@ -238,13 +238,12 @@ int main(int argc, char **argv)
     DEQUE_FOREACH(i, addrlist)
     {
         buffer_t *bp = (buffer_t *)i->p;
-        assert(bp->len > 4);
 
         epe.data.fd = socket(((struct sockaddr *)bp->buf)->sa_family, SOCK_DGRAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0);
 
         fprintf(stderr, "new socket fd: %d\n", epe.data.fd);
         dump_addr((struct sockaddr *)bp->buf, "try bind: ");
-        assert(bind(epe.data.fd, (struct sockaddr *)bp->buf, (socklen_t)bp->len) == 0);
+        bind(epe.data.fd, (struct sockaddr *)bp->buf, (socklen_t)bp->len) == 0;
 
         epe.events = EPOLLIN|EPOLLET;
         epoll_ctl(epfd, EPOLL_CTL_ADD, epe.data.fd, &epe);
@@ -259,6 +258,9 @@ int main(int argc, char **argv)
     client_t *client = (client_t *)malloc(sizeof(client_t));
     client->ssl = SSL_new(ctx);
     deque_init(&client->data.rxqueue);
+    client->data.bufhead.cap = sizeof(client->data.xsock);
+    client->data.bufhead.len = sizeof(client->data.xsock);
+    memset(&(client->data.xsock), 0x00, client->data.bufhead.cap);
     client->data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
     client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));
@@ -304,11 +306,13 @@ int main(int argc, char **argv)
             new_line = 0;
         }
 
-        while ((packet->len = recvfrom(epe.data.fd, packet->buf, packet->cap, 0, (struct sockaddr *)&client->data.txaddr, (socklen_t *)&client->data.txaddr_buf.len))>0)
+        xsock_t *xsock = NULL;
+        xsock = &(client->data.xsock);
+        while ((packet->len = xsock_recvfrom(xsock, epe.data.fd, packet->buf, packet->cap, 0, (struct sockaddr *)&client->data.txaddr, (socklen_t *)&client->data.txaddr_buf.len))>0)
         {
             dump_addr((struct sockaddr *)&client->data.txaddr, "<< ");
 
-            client_t *cli = (client_t *)ht_search(ht, &client->data.txaddr_buf);
+            client_t *cli = (client_t *)ht_search(ht, &client->data.bufhead);
             if (cli)
             {
                 deque_append(&cli->data.rxqueue, packet);
@@ -324,7 +328,7 @@ int main(int argc, char **argv)
 
                 if (ret==1)
                 {
-                    buffer_t *key = &client->data.txaddr_buf;
+                    buffer_t *key = &client->data.bufhead;
                     ht_insert(ht, key, client);
                     dump_addr((struct sockaddr *)&client->data.txaddr, "++ ");
                     client->serve(client);
@@ -333,6 +337,9 @@ int main(int argc, char **argv)
                     client = (client_t *)malloc(sizeof(client_t));
                     client->ssl = SSL_new(ctx);
                     deque_init(&client->data.rxqueue);
+                    client->data.bufhead.cap = sizeof(client->data.xsock);
+                    client->data.bufhead.len = sizeof(client->data.xsock);
+                    memset(&(client->data.xsock), 0x00, client->data.bufhead.cap);
                     client->data.txaddr_buf.cap = sizeof(struct sockaddr_storage);
                     client->data.txaddr_buf.len = sizeof(struct sockaddr_storage);
                     memset(&client->data.txaddr, 0, sizeof(struct sockaddr_storage));

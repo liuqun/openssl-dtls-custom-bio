@@ -55,6 +55,8 @@ void readline_handler(char *line)
     }
 }
 
+#include <openssl/rand.h> // RAND_bytes()
+#include "xsock.h"
 int main(int argc, char **argv)
 {
     int ret;
@@ -69,6 +71,18 @@ int main(int argc, char **argv)
     }
 
     custom_bio_data_t cbio_data;
+    /* 填写custom_bio_data_t结构体的 xsock 和 bufhead 字段 */
+    {
+        const char dst_host_id[XFS_DST_HOST_ID_SIZE+1] = "12345678901234567890";
+        char src_host_id[XFS_SRC_HOST_ID_SIZE] = {0};
+        RAND_bytes(src_host_id, sizeof(src_host_id));
+        src_host_id[0] = '[';
+        src_host_id[19] = ']';
+        xsock_set_src_host_id(&(cbio_data.xsock), src_host_id);
+        xsock_set_dst_host_id(&(cbio_data.xsock), dst_host_id);
+        cbio_data.bufhead.cap = sizeof(struct xsock_t_);
+        cbio_data.bufhead.len = sizeof(struct xsock_t_);
+    }
     char *c;
     int p;
 
@@ -148,6 +162,11 @@ int main(int argc, char **argv)
     }
 
     int sockfd = socket(cbio_data.txaddr.ss_family, SOCK_DGRAM|SOCK_NONBLOCK|SOCK_CLOEXEC, 0);
+    if (sockfd < 0)
+    {
+        fprintf(stderr, "ERROR! socket(): %s\n", strerror(errno));
+        exit(0x0F);
+    }
 
     if (connect(sockfd, (struct sockaddr *)&cbio_data.txaddr, cbio_data.txaddr_buf.len))
     {
@@ -157,7 +176,6 @@ int main(int argc, char **argv)
     }
     cbio_data.txfd = sockfd;
 
-    assert(sockfd);
     deque_init(&cbio_data.rxqueue);
     cbio_data.peekmode = 0;
 
@@ -232,7 +250,9 @@ int main(int argc, char **argv)
             rl_callback_read_char();
         if (epe.data.fd==sockfd)
         {
-            while ((packet->len=recv(sockfd, packet->buf, packet->cap, 0))>=0)
+            xsock_t *xsock = NULL;
+            xsock = &(cbio_data.xsock);
+            while ((packet->len=xsock_recv(xsock, sockfd, packet->buf, packet->cap, 0))>=0)
             {
                 fprintf(stderr, "\033[2K\r<< %d bytes\n", packet->len);
 

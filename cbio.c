@@ -32,7 +32,9 @@ int BIO_s_custom_write(BIO *b, const char *data, int dlen)
 
     dump_addr((struct sockaddr *)&cdp->txaddr, ">> ");
 //     dump_hex((unsigned const char *)data, dlen, "    ");
-    ret = sendto(cdp->txfd, data, dlen, 0, (struct sockaddr *)&cdp->txaddr, cdp->txaddr_buf.len);
+    xsock_t *xsock = NULL;
+    xsock = &(cdp->xsock);
+    ret = xsock_sendto(xsock, cdp->txfd, data, dlen, 0, (struct sockaddr *)&cdp->txaddr, cdp->txaddr_buf.len);
     if (ret >= 0)
         fprintf(stderr, "  %d bytes sent\n", ret);
     else

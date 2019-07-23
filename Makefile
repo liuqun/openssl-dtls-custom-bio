@@ -1,23 +1,21 @@
 CFLAGS=-g
-LDFLAGS=-lssl -lcrypto
-LIBS=cbio.o util.o
 
 .PHONY: all clean certs delete-certs
 
 all: server client certs
 
-server: server.c $(LIBS)
-	cc -o $@ $^ $(CFLAGS) $(LDFLAGS)
+server: server.c cbio.o util.o xsock.o
+	$(LINK.c) -o $@ $^ -lssl -lcrypto
 
-client: client.c $(LIBS)
-	cc -o $@ $^ $(CFLAGS) $(LDFLAGS) -lreadline
+client: client.c cbio.o util.o xsock.o
+	$(LINK.c) -o $@ $^ -lssl -lcrypto -lreadline
 
 certs: root-key.pem root-ca.pem \
 server-key.pem server-csr.pem server-cert.pem \
 client-key.pem client-csr.pem client-cert.pem
 
 clean: delete-certs
-	rm -f cbio.o util.o server client
+	rm -f *.o server client
 
 delete-certs:
 	rm -f *.pem *.srl

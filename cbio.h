@@ -1,7 +1,11 @@
 #ifndef CBIO_H
 #define CBIO_H
 
+#include "xsock.h"
+
 typedef struct custom_bio_data_st {
+    buffer_t bufhead;
+    xsock_t xsock;
     buffer_t txaddr_buf;
 //     struct sockaddr txaddr;
     struct sockaddr_storage txaddr;
