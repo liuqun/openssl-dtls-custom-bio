@@ -21,7 +21,8 @@ delete-certs:
 	rm -f *.pem *.srl
 
 %-key.pem:
-	openssl ecparam -name secp384r1 -genkey -noout -out $@
+	openssl genpkey -algorithm RSA -out $@ -outform PEM -pkeyopt rsa_keygen_bits:2048
+#	openssl ecparam -name secp384r1 -genkey -noout -out $@
 
 %-cert.pem: %-csr.pem root-ca.pem root-key.pem
 	openssl x509 -req -in $< -out $@ -CA root-ca.pem -CAkey root-key.pem -days 7
