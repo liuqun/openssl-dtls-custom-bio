@@ -1,8 +1,8 @@
 CC := gcc
 CFLAGS = -g -pthread
 
-OPENSSL_INCLUDE_DIR = openssl-1.1.1c/include
-OPENSSL_LIB_DIR = openssl-1.1.1c/lib
+OPENSSL_INCLUDE_DIR = /usr/local/include
+OPENSSL_LIB_DIR = /usr/local/lib
 OPENSSL_CFLAGS = -I$(OPENSSL_INCLUDE_DIR)
 OPENSSL_STATIC_LIBS = $(OPENSSL_LIB_DIR)/libssl.a $(OPENSSL_LIB_DIR)/libcrypto.a
 OPENSSL_SHARED_LIBS = $(OPENSSL_LIB_DIR)/libssl.so $(OPENSSL_LIB_DIR)/libcrypto.so
