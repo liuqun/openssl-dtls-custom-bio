@@ -596,7 +596,7 @@ int app_generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_le
             return 0;
         }
 	    app_is_cookie_secret_key_initialized = 1;
-	}
+    }
 
     bio = SSL_get_wbio(ssl);
     cbiodata = BIO_get_data(bio);
