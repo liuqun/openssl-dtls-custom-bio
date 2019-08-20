@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <ctype.h>
 
 #include <openssl/ssl.h>
 
@@ -317,6 +318,22 @@ int main(int argc, char **argv)
                 }
                 continue;
             }
+
+
+// 2019-8-20 为了与客户的联调，临时添加printf输出
+for (int i=0; i<n; i++)
+{
+    int ch = buf[i];
+    if (isprint(ch)){
+        putchar(ch);
+    }
+    else{
+        putchar('?');
+    }
+}
+putchar('\n');
+fflush(stdout);
+
             if ((n==6 && strncmp(buf, "whoami", 6)==0) || (n==7 && strncmp(buf, "whoami\n", 7)==0))
             {
                 const char *tmp = sdump_addr(&existing_sess->data.txaddr);

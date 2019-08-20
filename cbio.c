@@ -11,7 +11,7 @@
 #include "cbio.h"
 #include "xsock.h"
 
-// #define fprintf(...)
+#define fprintf(...)
 
 int BIO_s_custom_write_ex(BIO *b, const char *data, size_t dlen, size_t *written)
 {
